@@ -110,6 +110,9 @@ extension EditorTextView {
         preservingViewportAnchor {
             if let tlm = textLayoutManager {
                 tlm.invalidateLayout(for: tlm.documentRange)
+                #if DEBUG
+                debugMetrics.layoutInvalidations += 1
+                #endif
             }
             // Invalidating layout is not enough on its own: the layout manager
             // keeps its fragments and hands the cached ones back, so a paragraph

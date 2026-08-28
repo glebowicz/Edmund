@@ -119,6 +119,9 @@ extension EditorTextView {
         guard FileManager.default.fileExists(atPath: url.path) else { return .blocked(.notFound) }
         guard let image = NSImage(contentsOf: url) else { return .blocked(.notAnImage) }
         imageCache[key] = image
+        #if DEBUG
+        DebugMetrics.global.imageDecodes += 1
+        #endif
         return .image(image)
     }
 
@@ -139,6 +142,9 @@ extension EditorTextView {
                 inFlightRemoteImages.remove(urlString)
                 if let image {
                     imageCache[urlString] = image
+                    #if DEBUG
+                    DebugMetrics.global.imageDecodes += 1
+                    #endif
                 } else {
                     undecodableRemoteImages.insert(urlString)
                 }

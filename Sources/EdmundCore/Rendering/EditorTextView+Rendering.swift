@@ -858,6 +858,10 @@ extension EditorTextView {
         let block = blocks[blockIndex]
         guard block.range.upperBound <= ts.length else { return }
 
+        #if DEBUG
+        debugMetrics.blocksRestyled += 1
+        #endif
+
         let styled: NSAttributedString
         if case .frontMatter = block.kind, viewMode != .source {
             // YAML front matter: flat dim monospace. Never run YAML through the

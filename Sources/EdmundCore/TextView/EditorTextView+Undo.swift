@@ -35,6 +35,9 @@ extension EditorTextView {
         if shouldPush {
             undoStack.append(UndoSnapshot(rawSource: rawSource, cursorInRaw: currentCursorInRaw()))
             redoStack.removeAll()
+            #if DEBUG
+            debugMetrics.undoSnapshotsPushed += 1
+            #endif
         }
 
         lastEditType = editType

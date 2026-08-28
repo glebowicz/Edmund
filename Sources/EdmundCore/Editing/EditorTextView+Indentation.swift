@@ -113,6 +113,9 @@ extension EditorTextView {
         // Record undo
         undoStack.append(UndoSnapshot(rawSource: rawSource, cursorInRaw: rawStart))
         redoStack.removeAll()
+        #if DEBUG
+        debugMetrics.undoSnapshotsPushed += 1
+        #endif
         lastEditType = .other
         lastEditBlockIndex = nil
 
@@ -200,6 +203,9 @@ extension EditorTextView {
         // Record undo
         undoStack.append(UndoSnapshot(rawSource: rawSource, cursorInRaw: rawStart))
         redoStack.removeAll()
+        #if DEBUG
+        debugMetrics.undoSnapshotsPushed += 1
+        #endif
         lastEditType = .other
         lastEditBlockIndex = nil
 

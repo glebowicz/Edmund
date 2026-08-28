@@ -112,6 +112,9 @@ public final class SwiftMathRenderer: MathRenderer {
         let ascent = image.size.height - descent
 
         cache.setObject(Cached(image: image, ascent: ascent, descent: descent), forKey: key)
+        #if DEBUG
+        DebugMetrics.global.mathRenderMisses += 1
+        #endif
         return RenderedMath(image: image, ascent: ascent, descent: descent)
     }
 }

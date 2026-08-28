@@ -134,6 +134,12 @@ public class EditorTextView: NSTextView {
     var lastEditType: EditType = .other
     var isUndoRedoing = false
 
+    #if DEBUG
+    /// Per-editor instrumentation counters for the CI perf-regression gate.
+    /// See `DebugMetrics`.
+    public let debugMetrics = DebugMetrics()
+    #endif
+
     /// The separator between blocks in the display.
     /// Must match what BlockParser splits on.
     let blockSeparator = "\n"
@@ -469,6 +475,9 @@ public class EditorTextView: NSTextView {
         // the layout fragments — force a full re-layout when it changes.
         if antialiasChanged, let tlm = textLayoutManager {
             tlm.invalidateLayout(for: tlm.documentRange)
+            #if DEBUG
+            debugMetrics.layoutInvalidations += 1
+            #endif
         }
     }
 

@@ -24,6 +24,10 @@ extension EditorTextView {
     func recompose(cursorInRaw: Int, selectionInRaw: NSRange? = nil) {
         guard let ts = textStorage else { return }
 
+        #if DEBUG
+        debugMetrics.fullRecomposes += 1
+        #endif
+
         Log.measure("Full recompose (\(blocks.count) blocks)", category: .compose, level: .debug) {
             isUpdating = true
             let fullRange = NSRange(location: 0, length: ts.length)
@@ -54,6 +58,10 @@ extension EditorTextView {
                             dirty: IndexSet, cursorInRaw: Int,
                             selectionInRaw: NSRange? = nil) {
         guard let ts = textStorage else { return }
+
+        #if DEBUG
+        debugMetrics.rangedRecomposes += 1
+        #endif
 
         isUpdating = true
         ts.beginEditing()
@@ -108,6 +116,12 @@ extension EditorTextView {
         }
         let deferred = dirty.subtracting(syncSet)
 
+        #if DEBUG
+        debugMetrics.dirtyRecomposes += 1
+        debugMetrics.dirtyBlocksRequested += dirty.count
+        debugMetrics.dirtyBlocksDeferred += deferred.count
+        #endif
+
         ts.beginEditing()
         for idx in syncSet where idx < blocks.count {
             let cursorInBlock: Int? = (idx == newActiveIndex)
@@ -127,6 +141,9 @@ extension EditorTextView {
             for idx in syncSet where idx < blocks.count {
                 if let range = blockTextRange(blocks[idx].range, tlm) {
                     tlm.invalidateLayout(for: range)
+                    #if DEBUG
+                    debugMetrics.layoutInvalidations += 1
+                    #endif
                 }
             }
         }

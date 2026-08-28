@@ -33,6 +33,9 @@ extension EditorTextView {
 
         undoStack.append(UndoSnapshot(rawSource: rawSource, cursorInRaw: selectedRange().location))
         redoStack.removeAll()
+        #if DEBUG
+        debugMetrics.undoSnapshotsPushed += 1
+        #endif
         lastEditType = .other
         lastEditBlockIndex = nil
 
@@ -70,6 +73,9 @@ extension EditorTextView {
     func applyWholeDocumentEdit(newRawSource: String, select: NSRange) {
         undoStack.append(UndoSnapshot(rawSource: rawSource, cursorInRaw: selectedRange().location))
         redoStack.removeAll()
+        #if DEBUG
+        debugMetrics.undoSnapshotsPushed += 1
+        #endif
         lastEditType = .other
         lastEditBlockIndex = nil
 

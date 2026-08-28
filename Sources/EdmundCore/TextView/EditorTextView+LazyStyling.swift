@@ -36,6 +36,10 @@ extension EditorTextView {
         // Restyling marked text aborts IME composition — wait it out.
         guard !hasMarkedText() else { scheduleProgressiveStyling(); return }
 
+        #if DEBUG
+        debugMetrics.drainSlices += 1
+        #endif
+
         let start = ContinuousClock.now
         let budget = Duration.milliseconds(6)
 
@@ -86,6 +90,9 @@ extension EditorTextView {
             for idx in restyled where idx < blocks.count {
                 if let range = blockTextRange(blocks[idx].range, tlm) {
                     tlm.invalidateLayout(for: range)
+                    #if DEBUG
+                    debugMetrics.layoutInvalidations += 1
+                    #endif
                 }
             }
         }
@@ -166,6 +173,9 @@ extension EditorTextView {
                  category: .compose)
         preservingViewportAnchor {
             tlm.invalidateLayout(for: range)
+            #if DEBUG
+            debugMetrics.layoutInvalidations += 1
+            #endif
             tlm.ensureLayout(for: range)
         }
     }
@@ -210,6 +220,9 @@ extension EditorTextView {
             for idx in unstyled where idx < blocks.count {
                 if let range = blockTextRange(blocks[idx].range, tlm) {
                     tlm.invalidateLayout(for: range)
+                    #if DEBUG
+                    debugMetrics.layoutInvalidations += 1
+                    #endif
                 }
             }
         }

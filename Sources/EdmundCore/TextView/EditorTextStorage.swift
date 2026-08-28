@@ -76,8 +76,11 @@ public class EditorTextStorage: NSTextStorage {
     /// makes the transcode per-edit instead of per-call and — because the same
     /// storage object comes back — lets the breadcrumb index actually stick.
     ///
-    /// Mutated only from character edits, which (like every other storage
-    /// mutation here) happen on the main thread.
+    /// Written only from the two `replaceCharacters` overrides, which are the
+    /// single funnel for character edits and run on the main thread. Note this
+    /// is a narrower claim than the class as a whole: `fixAttributes` is
+    /// nonisolated by design (see `cascadeResolver`), and it never touches this
+    /// — a future off-main *read* of `string` would need rethinking.
     private var cachedString: String?
 
     override public var string: String {
@@ -86,6 +89,18 @@ public class EditorTextStorage: NSTextStorage {
         cachedString = bridged
         return bridged
     }
+
+    #if DEBUG
+    /// Test-only tripwire: has the cache drifted from the backing store?
+    /// Re-deriving costs the full bridge the cache exists to avoid, so this is
+    /// for assertions only — the fuzz suite checks it after every edit, which
+    /// is what proves the two `replaceCharacters` overrides really are the
+    /// only path that changes characters.
+    public var debugCachedStringIsStale: Bool {
+        guard let cachedString else { return false }
+        return cachedString != backing.string
+    }
+    #endif
 
     // NSAttributedString's default `length` is `self.string.length`, which on a
     // Swift subclass routes through the `string` override — and `backing.string`

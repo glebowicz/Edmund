@@ -60,6 +60,13 @@ struct IncrementalParseFuzzTests {
             // reference whole-document detector.
             #expect(editor.listIndentUnit ==
                     EditorTextView.detectListIndentUnit(editor.rawSource))
+            // EditorTextStorage caches the bridged `string` and drops it in
+            // `replaceCharacters`. Re-deriving from the backing store here (the
+            // one check that doesn't read through the cache) proves no edit
+            // path — insert, delete, replace, undo — leaves it stale.
+            if let storage = editor.textStorage as? EditorTextStorage {
+                #expect(!storage.debugCachedStringIsStale)
+            }
         }
 
         // Converged storage must match the styling oracle.

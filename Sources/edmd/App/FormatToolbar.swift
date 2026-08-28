@@ -502,6 +502,24 @@ final class FormatIconButton: NSButton {
     private var isHovered = false { didSet { updateBackground() } }
     private var tracking: NSTrackingArea?
 
+    // `updateBackground()` otherwise only runs off `isActive`/`isHovered`/
+    // `isEnabled` changing or an appearance change — none of which happen at
+    // construction, so a freshly made button needs the untinted starting
+    // state set explicitly rather than assumed. It used to arrive for free
+    // because `NSButton(image:target:action:)` assigned `isEnabled = true`
+    // through the visible property setter, tripping our override's `didSet`;
+    // that no longer happens under the macOS 26 SDK, which left every icon
+    // untinted (`contentTintColor == nil`) until first hovered.
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        updateBackground()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        updateBackground()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }

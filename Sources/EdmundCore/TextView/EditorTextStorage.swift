@@ -61,6 +61,15 @@ public class EditorTextStorage: NSTextStorage {
 
     override public var string: String { backing.string }
 
+    // NSAttributedString's default `length` is `self.string.length`, which on a
+    // Swift subclass routes through the `string` override — and `backing.string`
+    // is an NSMutableString, which Swift cannot bridge lazily, so every call
+    // eagerly transcodes the whole document to UTF-8. AppKit asks for `length`
+    // constantly (viewport layout, attribute enumeration, even mouse-moved
+    // hit-testing), so without this override the editor pays an O(document) copy
+    // per query. Answering from the backing store directly is O(1).
+    override public var length: Int { backing.length }
+
     override public func attributes(
         at location: Int, effectiveRange range: NSRangePointer?
     ) -> [NSAttributedString.Key: Any] {

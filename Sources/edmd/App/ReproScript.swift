@@ -307,6 +307,17 @@ enum ReproScript {
                                "enabled=\(on) tip=\(tip ?? "nil")")
                     }
                 }
+            case "resize":
+                // "resize W H" — sets the window's content size, to check
+                // whether chrome geometry (additionalTopInset, contentLayoutRect)
+                // stays correct after a resize rather than only at launch size.
+                scheduleDoc(after: delay) { doc in
+                    guard let window = doc.windowControllers.first?.window else { return }
+                    let f = arg.split(separator: " ")
+                    guard f.count == 2, let w = Double(f[0]), let h = Double(f[1]) else { return }
+                    window.setContentSize(NSSize(width: w, height: h))
+                    report("repro resize \(w)x\(h)")
+                }
             case "logglass":
                 // Liquid Glass chrome geometry, checkable without a rendered
                 // screen (window layout runs regardless of display sleep/lock,

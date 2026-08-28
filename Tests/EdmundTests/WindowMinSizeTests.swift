@@ -46,18 +46,22 @@ struct WindowMinSizeTests {
         container.addSubview(scrollView)
         container.addSubview(statusBar)
 
-        _ = FindController(editor: editor, scrollView: scrollView,
-                           container: container, statusBar: statusBar)
+        let findController = FindController(editor: editor, scrollView: scrollView,
+                                            container: container, statusBar: statusBar)
 
-        let bar = container.subviews.first { $0 is FindBarView }
+        let barInContainer = container.subviews.first { $0 is FindBarView }
         if #available(macOS 26.0, *) {
             // On 26+ the bar is hosted as a titlebar accessory instead (see
             // GlassChrome) — it must NOT land in `container`, or it would
             // reintroduce the exact contentMinSize scar this test guards
-            // against under the pre-26 hosting path.
-            #expect(bar == nil)
+            // against under the pre-26 hosting path. Checked against the real
+            // bar instance, not just an absence in `container`, so this can't
+            // pass vacuously if construction produced no bar at all.
+            #expect(findController.barView.superview == nil)
+            #expect(barInContainer == nil)
         } else {
-            #expect(bar?.frame.width == width)
+            #expect(barInContainer === findController.barView)
+            #expect(barInContainer?.frame.width == width)
         }
     }
 }

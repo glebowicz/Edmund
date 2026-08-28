@@ -471,24 +471,24 @@ Notable subsystems:
 
 ### Build, signing & packaging
 
-- **Build with the compiler CI builds with.** CI is macos-14 + `latest-stable`
-  Xcode, which is **Swift 6.0.3** (Xcode 16.2). Since 2026-08-10 the local CLI
-  matches it: the `TOOLCHAINS` export in `~/.zshrc` is commented out, so
-  `swift --version` reports 6.0.3 and a green local `swift test` means what it
-  says. The swift.org 6.3.3 toolchain is still installed for one-offs
-  (`TOOLCHAINS=org.swift.633202606251a swift build`) — but it is **newer than
-  CI**, and newer accepts what CI rejects. Two ways that has already cost a red
-  `test` run:
-  - SwiftUI's `View` is `@MainActor @preconcurrency`, so on 6.0.3 a `static
-    func` on a `View` is inferred main-actor-isolated and a synchronous test
-    suite cannot call it (PR #249). Mark such helpers `nonisolated`.
-  - An **unapplied method reference** is inferred on 6.0.3 as throwing *and* as
-    losing its actor isolation, so `forEach(removeTrackingArea)` and
-    `compactMap(Self.chip(of:))` failed to compile there and nowhere here
-    (PR #270). Spell the argument out: `forEach { removeTrackingArea($0) }`.
-  If you do run 6.3.3 for something, check parity before pushing with the
-  toolchain named explicitly, into a scratch path so it can't poison `.build`:
-  `TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault swift test --scratch-path /tmp/ci-build`.
+- **Build with the compiler CI builds with.** Since the Liquid Glass migration
+  (2026-08), CI runs on `macos-26` + `latest-stable` Xcode (Xcode 26.6, SDK
+  26.5, **Swift 6.3.3**) — moved up from `macos-14`/Xcode 16.2/Swift 6.0.3 so
+  CI links the SDK that renders the new design; `macos-14` produced
+  Aqua-only DMGs while every local build (SDK-gated, not deployment-target
+  gated) already rendered Liquid Glass. Local and CI now match, so a green
+  local `swift test` means what it says.
+  - **Historical, no longer reachable**: two Swift 6.0.3-only inference traps
+    that cost red `test` runs under the old CI compiler — a `static func` on
+    a SwiftUI `View` inferred main-actor-isolated (PR #249, fixed with
+    `nonisolated`), and an unapplied method reference inferred as throwing
+    and losing its actor isolation (PR #270, fixed by spelling out the
+    argument: `forEach { removeTrackingArea($0) }`). Both compile cleanly on
+    6.3.3; kept here only so a future toolchain downgrade doesn't rediscover
+    them from scratch.
+  - The deployment target (`Package.swift` `.macOS(.v14)`) is unchanged by
+    this move — Liquid Glass is gated on the **linked SDK**, not the minimum
+    OS, so raising CI's SDK doesn't raise what the app requires to run.
   (Naming the toolchain beats `env -u TOOLCHAINS`: an agent in a worktree
   session has its `env` wrappers refused, since the harness can't see what they
   do to the command inside.)

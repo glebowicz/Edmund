@@ -8,7 +8,9 @@ on:
 jobs:
   release:
     name: Build & publish
-    runs-on: macos-14
+    # macos-26: see ci.yml — releases must link the SDK that renders Liquid
+    # Glass, or the shipped DMG looks different from every local build.
+    runs-on: macos-26
     permissions:
       contents: write  # create releases and commit appcast
     steps:

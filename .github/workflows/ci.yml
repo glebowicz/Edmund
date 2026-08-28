@@ -17,7 +17,12 @@ concurrency:
 jobs:
   test:
     name: test
-    runs-on: macos-14
+    # macos-26 (Tahoe, GA since 2026-02) so CI links against the SDK that
+    # renders Liquid Glass — macos-14 shipped Aqua-only DMGs while every local
+    # build already rendered the new design (SDK-gated, not deployment-target
+    # gated). Deployment target stays macOS 14 in Package.swift; only the
+    # build/link environment moves.
+    runs-on: macos-26
     # The suite runs in ~2 minutes. A test that blocks the main thread (a modal
     # alert with nobody to dismiss it, say) otherwise sits until the 6-hour
     # ceiling — billed at the 10x macOS rate the whole way.

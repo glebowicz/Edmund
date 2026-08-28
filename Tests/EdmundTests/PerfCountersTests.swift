@@ -166,6 +166,8 @@ struct PerfCountersTests {
         let pasteMetrics = (
             fullRecomposes: editor.debugMetrics.fullRecomposes,
             dirtyBlocksRequested: editor.debugMetrics.dirtyBlocksRequested,
+            dirtyBlocksDeferred: editor.debugMetrics.dirtyBlocksDeferred,
+            blocksRestyled: editor.debugMetrics.blocksRestyled,
             undoSnapshotsPushed: editor.debugMetrics.undoSnapshotsPushed
         )
 
@@ -175,6 +177,14 @@ struct PerfCountersTests {
         // Bounded well below "every block in the document" (680).
         #expect(pasteMetrics.dirtyBlocksRequested <= 600,
                 "dirtyBlocksRequested=\(pasteMetrics.dirtyBlocksRequested), measured 523")
+        // Pins the dirty.count > 8 sync/defer split in recomposeDirty: only a
+        // small synchronous slice restyles immediately, the rest defers to the
+        // idle drain. Without the split, dirtyBlocksDeferred collapses to 0 and
+        // blocksRestyled jumps to match dirtyBlocksRequested.
+        #expect(pasteMetrics.dirtyBlocksDeferred > 400,
+                "dirtyBlocksDeferred=\(pasteMetrics.dirtyBlocksDeferred), measured 522")
+        #expect(pasteMetrics.blocksRestyled <= 20,
+                "blocksRestyled=\(pasteMetrics.blocksRestyled), measured 1")
         #expect(pasteMetrics.undoSnapshotsPushed == 1)
 
         // Undo of the paste must route through recomposeReplacing, not a full
@@ -267,8 +277,11 @@ struct PerfCountersTests {
         editor.promoteVisibleUnstyledBlocks()
         let m = editor.debugMetrics
 
-        // Bounded by the viewport window, not the whole unstyled tail.
+        // Bounded by the viewport window, not the whole unstyled tail — and
+        // must actually do something (promotion silently no-op'ing, e.g. from
+        // an unlaid-out viewport, would satisfy the upper bound vacuously).
         // Measured 45 restyled out of 234 unstyled — well under half.
+        #expect(m.blocksRestyled > 0, "promotion restyled nothing")
         #expect(m.blocksRestyled < unstyledBefore / 2,
                 "blocksRestyled=\(m.blocksRestyled) of \(unstyledBefore) unstyled — promotion should not style the whole tail")
     }

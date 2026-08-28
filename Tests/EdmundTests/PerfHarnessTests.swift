@@ -60,6 +60,13 @@ struct PerfHarnessTests {
         editor.recomposeIncremental(cursorInRaw: length)
         mark("keystroke end: type")
         let endKeystrokeMS = measureMS { type("x", into: editor) }
+        // Keep typing at the same spot. The first keystroke after a load can
+        // absorb one-time work (below `fullLayoutMaxLength` the document is
+        // laid out in full), so a single sample cannot tell a startup hitch
+        // apart from a per-keystroke cost — this separates them.
+        var endRunMS: [Double] = []
+        for _ in 0..<9 { endRunMS.append(measureMS { type("x", into: editor) }) }
+        let endRunMedian = endRunMS.sorted()[endRunMS.count / 2]
 
         // Keystroke mid-document (inside whatever block is there).
         mark("keystroke mid")
@@ -89,7 +96,8 @@ struct PerfHarnessTests {
         print("""
         [MD_PERF] document: \(length) chars, \(blockCount) blocks (\(styledAtLoad) styled at load)
         [MD_PERF] loadContent:        \(String(format: "%9.2f", loadMS)) ms
-        [MD_PERF] keystroke (end):    \(String(format: "%9.2f", endKeystrokeMS)) ms
+        [MD_PERF] keystroke (end):    \(String(format: "%9.2f", endKeystrokeMS)) ms  (first after load)
+        [MD_PERF] keystroke (end) x9: \(String(format: "%9.2f", endRunMedian)) ms  (median of the next 9)
         [MD_PERF] keystroke (mid):    \(String(format: "%9.2f", midKeystrokeMS)) ms
         [MD_PERF] enter (mid):        \(String(format: "%9.2f", enterMS)) ms
         [MD_PERF] paste 10KB (mid):   \(String(format: "%9.2f", pasteMS)) ms

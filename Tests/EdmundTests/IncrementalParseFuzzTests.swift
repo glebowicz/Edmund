@@ -64,9 +64,13 @@ struct IncrementalParseFuzzTests {
             // `replaceCharacters`. Re-deriving from the backing store here (the
             // one check that doesn't read through the cache) proves no edit
             // path — insert, delete, replace, undo — leaves it stale.
+            // The tripwire itself is DEBUG-only (it costs a full bridge), so
+            // this must be gated too or the release test build won't compile.
+            #if DEBUG
             if let storage = editor.textStorage as? EditorTextStorage {
                 #expect(!storage.debugCachedStringIsStale)
             }
+            #endif
         }
 
         // Converged storage must match the styling oracle.

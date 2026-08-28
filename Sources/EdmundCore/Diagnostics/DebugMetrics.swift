@@ -24,8 +24,18 @@ public final class DebugMetrics {
     public var dirtyBlocksDeferred = 0
     public var drainSlices = 0
     public var layoutInvalidations = 0
+    /// Edit-driven pushes only (`recordUndoIfNeeded` and the whole-document
+    /// edit helpers). Does NOT count the bookkeeping push `performUndo`/
+    /// `performRedo` make onto the *opposite* stack when they fire — counting
+    /// those would make undoing/redoing during a scenario look like new edits.
     public var undoSnapshotsPushed = 0
+    /// Process-global cache (`MathRenderer`'s `NSCache`), shared across the
+    /// whole parallel test run — only `DebugMetrics.global` is meaningful for
+    /// this one. Record it; don't assert an exact value in a scenario that
+    /// isn't guaranteed to run with a cold cache.
     public var mathRenderMisses = 0
+    /// Process-global cache (the editor's `imageCache`), same caveat as
+    /// `mathRenderMisses`.
     public var imageDecodes = 0
 
     public init() {}

@@ -32,6 +32,12 @@ class Document: NSDocument, HeadingNavigable {
     private var formatBar: FormatBarView!
     private var readView: ReadModeWebView?
 
+    /// Titlebar accessories hosting `formatBar`/`findController.barView` on
+    /// macOS 26+ — see `GlassChrome`. `nil` pre-26, where the bars are plain
+    /// `containerView` subviews instead.
+    private var formatAccessory: NSTitlebarAccessoryViewController?
+    private var findAccessory: NSTitlebarAccessoryViewController?
+
     /// Editor character offset captured when entering Read mode (the topmost
     /// visible line at the moment of the switch), used to scroll the editor
     /// back to roughly the same place if leaving Read mode returns no anchor
@@ -133,7 +139,17 @@ class Document: NSDocument, HeadingNavigable {
             defer: false
         )
         window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
+        // On 26+, the titlebar and toolbar become one continuous glass surface
+        // and the document scrolls under it (`layoutTopBars()` re-sources
+        // `additionalTopInset` from `window.contentLayoutRect` to make room).
+        // Pre-26 keeps the opaque titlebar exactly as before — this is an
+        // SDK-gated addition, not a replacement, of the existing behaviour.
+        if #available(macOS 26.0, *) {
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+        } else {
+            window.titlebarAppearsTransparent = false
+        }
         window.isMovableByWindowBackground = true
         // Restorable for the whole session, whatever "Reopen windows from last
         // session" says: state restoration is also how AppKit hands back a
@@ -152,13 +168,19 @@ class Document: NSDocument, HeadingNavigable {
         // (`updateChangeCount`).
         window.isRestorable = isWorthRestoring
         window.minSize = NSSize(width: 320, height: 400)
-        window.backgroundColor = NSColor.textBackgroundColor
 
         // Build the TextKit 2 text system chain (viewport-based layout).
         editor = EditorTextView.makeTextKit2(
             frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
             containerSize: NSSize(width: windowWidth, height: CGFloat.greatestFiniteMagnitude)
         )
+        // Matched to the editor's own background, not a separate system color:
+        // once the titlebar is glass (26+) it samples whatever sits behind it,
+        // and any mismatch between the window and editor backgrounds — invisible
+        // under the old opaque titlebar — becomes a visible seam through it.
+        // Kept in sync on appearance change by
+        // `EditorTextView.viewDidChangeEffectiveAppearance()`.
+        window.backgroundColor = editor.editorBackgroundColor
         editor.minSize = NSSize(width: 0, height: 0)
         editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                                 height: CGFloat.greatestFiniteMagnitude)
@@ -208,7 +230,14 @@ class Document: NSDocument, HeadingNavigable {
         toolbar.centeredItemIdentifiers = FormatToolbar.centeredIdentifiers
         window.toolbar = toolbar
         window.toolbarStyle = .unified
-        window.titlebarSeparatorStyle = .line
+        // On 26+ the hairline would draw a hard line across the glass surface
+        // the titlebar/toolbar/bars now share — the "avoid glass on glass"
+        // rule extends to a drawn separator between two glass regions too.
+        if #available(macOS 26.0, *) {
+            window.titlebarSeparatorStyle = .none
+        } else {
+            window.titlebarSeparatorStyle = .line
+        }
 
         // Wire the window's secondary-click interceptions now that the toolbar has
         // synchronously vended its buttons (see DocumentWindow).
@@ -262,9 +291,27 @@ class Document: NSDocument, HeadingNavigable {
         formatBar = FormatBarView(frame: .zero)
         formatBar.isHidden = true
         formatBar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
-        formatBar.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
-        // Below the floating status bar so counts stay on top.
-        containerView.addSubview(formatBar, positioned: .below, relativeTo: statusBar)
+        if #available(macOS 26.0, *) {
+            // Hosted as a titlebar accessory below instead — one continuous
+            // glass surface with the toolbar, not a second material layer
+            // stacked inside `containerView`.
+        } else {
+            formatBar.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
+            // Below the floating status bar so counts stay on top.
+            containerView.addSubview(formatBar, positioned: .below, relativeTo: statusBar)
+        }
+
+        // On 26+, both bars ride the titlebar as glass accessories — format
+        // bar first so it lands above the find bar, matching the on-screen
+        // order the pre-26 `containerView` stacking produces.
+        if #available(macOS 26.0, *) {
+            let formatAccessory = GlassChrome.makeAccessory(for: formatBar)
+            let findAccessory = GlassChrome.makeAccessory(for: findController.barView)
+            window.addTitlebarAccessoryViewController(formatAccessory)
+            window.addTitlebarAccessoryViewController(findAccessory)
+            self.formatAccessory = formatAccessory
+            self.findAccessory = findAccessory
+        }
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(editorDidChange(_:)),
@@ -865,6 +912,19 @@ class Document: NSDocument, HeadingNavigable {
     /// whichever ran last. Order in the array is the on-screen order (top
     /// first): format bar above find bar.
     func layoutTopBars() {
+        if #available(macOS 26.0, *), let formatAccessory, let findAccessory {
+            GlassChrome.sync(bar: formatBar, accessory: formatAccessory)
+            GlassChrome.sync(bar: findController.barView, accessory: findAccessory)
+            // `contentLayoutRect` already accounts for the toolbar *and* both
+            // accessories — deriving the inset from it (rather than summing
+            // bar heights, which never included the toolbar) is what makes
+            // the document rest below all of the glass chrome, not just the
+            // bars, once `containerView` spans the full window height.
+            let window = windowControllers.first?.window
+            let contentHeight = window?.contentLayoutRect.height ?? containerView.bounds.height
+            editor.additionalTopInset = containerView.bounds.height - contentHeight
+            return
+        }
         var y = containerView.bounds.height
         for bar in [formatBar!, findController.barView] where !bar.isHidden {
             let h = bar.preferredHeight

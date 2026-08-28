@@ -433,10 +433,11 @@ public class EditorTextView: NSTextView {
     /// the shared `NSColor(hex:)` helper (which uses `calibratedRed:`) — the
     /// calibrated color space renders visibly lighter than the sRGB hex value
     /// once composited on screen.
-    /// Internal rather than private: the line-number gutter fills itself with
+    /// Public rather than internal: the line-number gutter fills itself with
     /// this so the two surfaces read as one (the scroll view draws no
-    /// background of its own).
-    var editorBackgroundColor: NSColor {
+    /// background of its own), and `Document` (a different module) matches the
+    /// window's background to it so a glass titlebar doesn't show a seam.
+    public var editorBackgroundColor: NSColor {
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         guard dark else { return .textBackgroundColor }
         return NSColor(srgbRed: 0x29 / 255.0, green: 0x29 / 255.0, blue: 0x29 / 255.0, alpha: 1.0)
@@ -609,6 +610,10 @@ public class EditorTextView: NSTextView {
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         backgroundColor = editorBackgroundColor
+        // Kept in sync with the window's own background (set from this same
+        // color in `Document.makeWindowControllers`) so a glass titlebar never
+        // samples a mismatched color through it.
+        window?.backgroundColor = editorBackgroundColor
         insertionPointColor = accentColor
         selectedTextAttributes = [
             .backgroundColor: selectionHighlightColor,

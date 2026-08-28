@@ -307,6 +307,27 @@ enum ReproScript {
                                "enabled=\(on) tip=\(tip ?? "nil")")
                     }
                 }
+            case "logglass":
+                // Liquid Glass chrome geometry, checkable without a rendered
+                // screen (window layout runs regardless of display sleep/lock,
+                // only the physical scanout doesn't) — useful when a capture
+                // isn't available.
+                scheduleDoc(after: delay) { doc in
+                    guard let window = doc.windowControllers.first?.window else {
+                        report("repro glass: no window"); return
+                    }
+                    report("repro glass styleMask=\(window.styleMask.rawValue) " +
+                           "titlebarTransparent=\(window.titlebarAppearsTransparent) " +
+                           "separator=\(window.titlebarSeparatorStyle.rawValue) " +
+                           "contentViewBounds=\(window.contentView?.bounds ?? .zero) " +
+                           "contentLayoutRect=\(window.contentLayoutRect) " +
+                           "additionalTopInset=\(doc.editor.additionalTopInset) " +
+                           "accessoryCount=\(window.titlebarAccessoryViewControllers.count)")
+                    for (i, accessory) in window.titlebarAccessoryViewControllers.enumerated() {
+                        report("repro glass accessory[\(i)] hidden=\(accessory.isHidden) " +
+                               "frame=\(accessory.view.frame) fullScreenMinHeight=\(accessory.fullScreenMinHeight)")
+                    }
+                }
             case "clicktoolbar":
                 scheduleDoc(after: delay) { doc in
                     guard let item = doc.windowControllers.first?.window?.toolbar?

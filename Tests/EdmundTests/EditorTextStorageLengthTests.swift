@@ -57,6 +57,58 @@ struct EditorTextStorageLengthTests {
     }
 
     @MainActor
+    @Test("string is invalidated by every character edit")
+    func stringCacheFollowsEdits() {
+        let ts = storage("hello world")
+        #expect(ts.string == "hello world")     // primes the cache
+
+        ts.replaceCharacters(in: NSRange(location: 5, length: 0), with: ",")
+        #expect(ts.string == "hello, world")
+
+        // The attributed-string overload invalidates too.
+        ts.replaceCharacters(in: NSRange(location: 0, length: 5),
+                             with: NSAttributedString(string: "HELLO"))
+        #expect(ts.string == "HELLO, world")
+
+        ts.replaceCharacters(in: NSRange(location: 0, length: ts.length), with: "")
+        #expect(ts.string == "")
+
+        ts.replaceCharacters(in: NSRange(location: 0, length: 0), with: "back 🌍")
+        #expect(ts.string == "back 🌍")
+        #expect(ts.length == (ts.string as NSString).length)
+    }
+
+    @MainActor
+    @Test("attribute-only changes leave string intact")
+    func attributeChangesDoNotDisturbString() {
+        let ts = storage("styled text 🌍 here")
+        let before = ts.string
+        ts.setAttributes([.font: NSFont.systemFont(ofSize: 14)],
+                         range: NSRange(location: 0, length: ts.length))
+        ts.addAttribute(.foregroundColor, value: NSColor.red,
+                        range: NSRange(location: 0, length: 6))
+        // fixAttributes runs font substitution over the emoji — attributes only.
+        ts.fixAttributes(in: NSRange(location: 0, length: ts.length))
+        #expect(ts.string == before)
+        #expect(ts.length == (before as NSString).length)
+    }
+
+    @MainActor
+    @Test("repeated reads agree with the backing store after interleaved edits")
+    func repeatedReadsStayConsistent() {
+        let ts = storage("")
+        var expected = ""
+        for (i, piece) in ["alpha ", "βγδ ", "🌍🌎 ", "epsilon"].enumerated() {
+            ts.replaceCharacters(in: NSRange(location: ts.length, length: 0), with: piece)
+            expected += piece
+            // Read twice: the second read is the cached one.
+            #expect(ts.string == expected, "after append \(i)")
+            #expect(ts.string == expected, "cached read after append \(i)")
+            #expect(ts.length == (expected as NSString).length)
+        }
+    }
+
+    @MainActor
     @Test("length agrees with attribute enumeration bounds")
     func lengthBoundsAttributeEnumeration() {
         let ts = storage("bold and plain 🌍 text")

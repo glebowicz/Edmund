@@ -34,6 +34,7 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
         .testTarget(
             name: "EdmundTests",
-            dependencies: ["EdmundCore", "edmd"]),
+            dependencies: ["EdmundCore", "edmd"],
+            resources: [.copy("Fixtures")]),
     ]
 )

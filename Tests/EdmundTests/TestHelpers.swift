@@ -39,6 +39,86 @@ func makeEditor() -> EditorTextView {
     return editor
 }
 
+/// A `UserDefaults` suite populated from an exported plist, so a pinned
+/// profile's real values go through the very same `EditorTheme.load` the app
+/// uses. Shared by `SettingsPerfComparisonTests` and `makePerfEditor()`.
+func defaultsSuite(named name: String, from plistPath: String?) -> UserDefaults {
+    let suite = UserDefaults(suiteName: name)!
+    suite.removePersistentDomain(forName: name)
+    if let plistPath,
+       let dict = NSDictionary(contentsOf: URL(fileURLWithPath: plistPath)) as? [String: Any] {
+        suite.setPersistentDomain(dict, forName: name)
+    }
+    return suite
+}
+
+/// The `Fixtures` directory SwiftPM copies into the test bundle
+/// (`resources: [.copy("Fixtures")]` in Package.swift).
+let fixturesDirectory: URL = {
+    guard let url = Bundle.module.url(forResource: "Fixtures", withExtension: nil) else {
+        fatalError("Fixtures resource directory not found in the test bundle — check Package.swift's EdmundTests resources")
+    }
+    return url
+}()
+
+/// An editor loaded with the pinned "maximal" settings profile
+/// (`Fixtures/perf-profile.plist`) instead of an empty defaults domain.
+///
+/// Perf tests must never call `makeEditor()`: its empty domain measures the
+/// shipped defaults, not a pinned or realistic profile — every perf number
+/// recorded before this was noticed (2026-08-28) silently measured the wrong
+/// thing. This loads a frozen, maximal profile instead, so runs are
+/// comparable to each other over time.
+@MainActor
+func makePerfEditor() -> EditorTextView {
+    let editor = EditorTextView.makeTextKit2(
+        frame: NSRect(x: 0, y: 0, width: 700, height: 800),
+        containerSize: NSSize(width: 700, height: CGFloat.greatestFiniteMagnitude)
+    )
+
+    let plistPath = fixturesDirectory.appendingPathComponent("perf-profile.plist").path
+    let suiteName = "EdmundPerf.\(UUID().uuidString)"
+    let suite = defaultsSuite(named: suiteName, from: plistPath)
+    let domain = suite.persistentDomain(forName: suiteName) ?? [:]
+    func bool(_ key: String) -> Bool { (domain[key] as? Bool) ?? false }
+
+    editor.themeDefaults = suite
+    editor.theme = .load(from: suite)
+
+    // The rest of what AppSettings.applyEditSettings pushes onto a real
+    // editor — reproduced here (not called into) because AppSettings reads
+    // UserDefaults.standard directly, which would defeat the whole point of
+    // a pinned, isolated suite. See SettingsPerfComparisonTests for the same
+    // pattern with the same rationale.
+    editor.isContinuousSpellCheckingEnabled = bool("settings.edit.spellCheck")
+    editor.isGrammarCheckingEnabled = bool("settings.edit.grammarCheck")
+    editor.invisibles = bool("settings.edit.showInvisibles")
+        ? InvisiblesConfig(lineEnding: bool("settings.edit.invisibleLineEnding"),
+                           tab: bool("settings.edit.invisibleTab"),
+                           space: bool("settings.edit.invisibleSpace"),
+                           otherWhitespace: bool("settings.edit.invisibleWhitespace"),
+                           otherControl: bool("settings.edit.invisibleControl"))
+        : nil
+    editor.showListIndentGuides = bool("settings.edit.showListIndentGuides")
+    editor.showLineNumbers = bool("settings.edit.showLineNumbers")
+    editor.typewriterModeEnabled = bool("EditorTypewriterMode")
+    editor.focusMode = bool("settings.edit.focusMode")
+    // blockExternalImages == YES means remote images are blocked, i.e.
+    // allowRemoteImages == false — this is the maximal-*restriction*, not a
+    // toggle left off by omission.
+    editor.allowRemoteImages = !bool("settings.advanced.blockExternalImages")
+    editor.markdownFeatures = .all
+
+    if let widthCm = domain["settings.appearance.maxContentWidthCm"] as? Double {
+        // Same cm→pt conversion SettingsPerfComparisonTests uses: a test
+        // process has no real screen, so this is a fixed fallback PPI, not
+        // NSScreen.physicalPPI.
+        editor.maxContentWidthPoints = CGFloat(widthCm) / 2.54 * 109
+    }
+
+    return editor
+}
+
 /// The BlockDecoration attribute at `offset` in the editor's storage, if any.
 @MainActor
 func blockDecoration(at offset: Int, in editor: EditorTextView) -> BlockDecoration? {

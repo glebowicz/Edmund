@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Pinned "maximal" settings profile for the perf-regression gate and the
+	     MD_PERF timing harnesses. Every feature that can be turned on, is —
+	     see docs/perf notes / the plan this fixture was authored for. Frozen:
+	     changing a value here invalidates every historical timing row, so
+	     don't edit casually. -->
+
+	<key>settings.appearance.maxContentWidthCm</key>
+	<real>16.0</real>
+
+	<key>settings.general.diagnosticLogging</key>
+	<true/>
+
+	<key>settings.advanced.blockExternalImages</key>
+	<true/>
+
+	<key>settings.syntax.enableNonGFM</key>
+	<true/>
+	<key>settings.syntax.frontMatter</key>
+	<true/>
+	<key>settings.syntax.math</key>
+	<true/>
+	<key>settings.syntax.highlight</key>
+	<true/>
+	<key>settings.syntax.comment</key>
+	<true/>
+	<key>settings.syntax.wikilink</key>
+	<true/>
+	<key>settings.syntax.tag</key>
+	<true/>
+	<key>settings.syntax.blockRef</key>
+	<true/>
+	<key>settings.syntax.footnote</key>
+	<true/>
+	<key>settings.syntax.obsidianCallout</key>
+	<true/>
+
+	<key>settings.extensions.enabledIDs</key>
+	<array>
+		<string>advanced-math</string>
+	</array>
+
+	<key>settings.edit.showInvisibles</key>
+	<true/>
+	<key>settings.edit.invisibleLineEnding</key>
+	<true/>
+	<key>settings.edit.invisibleTab</key>
+	<true/>
+	<key>settings.edit.invisibleSpace</key>
+	<true/>
+	<key>settings.edit.invisibleWhitespace</key>
+	<true/>
+	<key>settings.edit.invisibleControl</key>
+	<true/>
+	<key>settings.edit.showListIndentGuides</key>
+	<true/>
+	<key>settings.edit.showLineNumbers</key>
+	<true/>
+
+	<key>EditorTypewriterMode</key>
+	<true/>
+	<key>settings.edit.focusMode</key>
+	<true/>
+
+	<key>settings.edit.spellCheck</key>
+	<true/>
+	<key>settings.edit.grammarCheck</key>
+	<true/>
+</dict>
+</plist>

@@ -66,18 +66,6 @@ struct SettingsPerfComparisonTests {
 
     // MARK: - Profile construction
 
-    /// A `UserDefaults` suite populated from an exported plist, so the user's
-    /// real values go through the very same `EditorTheme.load` the app uses.
-    private func defaultsSuite(named name: String, from plistPath: String?) -> UserDefaults {
-        let suite = UserDefaults(suiteName: name)!
-        suite.removePersistentDomain(forName: name)
-        if let plistPath,
-           let dict = NSDictionary(contentsOf: URL(fileURLWithPath: plistPath)) as? [String: Any] {
-            suite.setPersistentDomain(dict, forName: name)
-        }
-        return suite
-    }
-
     private func makeProfiles() -> (defaults: Profile, user: Profile, userDomain: [String: Any]) {
         let defaultSuite = defaultsSuite(named: "EdmundCmp.default.\(UUID().uuidString)",
                                          from: nil)

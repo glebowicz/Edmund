@@ -11,7 +11,7 @@ class Document: NSDocument, HeadingNavigable {
 
     var editor: EditorTextView!
     private var statusBar: StatusBarView!
-    private var viewModeButton: NSButton?
+    private var viewModeGroup: NSToolbarItemGroup?
     private static let viewModeItemID = NSToolbarItem.Identifier("viewMode")
 
     /// Builds and owns the formatting toolbar items (see `FormatToolbar`).
@@ -240,9 +240,12 @@ class Document: NSDocument, HeadingNavigable {
         }
 
         // Wire the window's secondary-click interceptions now that the toolbar has
-        // synchronously vended its buttons (see DocumentWindow).
+        // synchronously vended its buttons (see DocumentWindow). The view-mode
+        // item used to be here too, but a real NSToolbarItemGroup segmented
+        // control has no custom view to intercept a right-click on, and no
+        // menu of its own left to show — Source Mode lives on the View menu
+        // checkbox alone now.
         window.secondaryClickTargets = [
-            .init(viewModeButton) { [weak self] in self?.viewModeMenu() ?? NSMenu() },
             .init(formatToolbar.linkButton) { [weak self] in
                 self?.formatToolbar.linkMenu() ?? NSMenu()
             },
@@ -580,26 +583,25 @@ class Document: NSDocument, HeadingNavigable {
         }
     }
 
-    /// Shows the active mode's icon on the button and keeps the tooltip in sync.
-    private func refreshViewModeButton() {
-        guard let editor else { return }
-        // 15pt matches the formatting glyphs beside it (FormatToolbar.symbol).
-        // `book` is sized down from that: its intrinsic box is taller than
-        // `pencil`'s, so at a shared point size it draws visibly bigger (measured
-        // 17.5pt tall against the pencil's 15.0pt) and the button appears to
-        // change size when the mode flips. These two numbers are chosen so the
-        // *drawn* glyphs match, which is what the eye compares.
-        let pointSize: CGFloat = editor.viewMode == .reading ? 12.9 : 15
-        viewModeButton?.image = icon(for: editor.viewMode)?
-            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
-        // Names what the click does, not what the mode is: the icon already shows
-        // the current mode, and AppKit's own toolbars read "Hide Sidebar" /
-        // "Show Sidebar" rather than stating the state back. Source is a display
-        // option *of* the editing view, not a third destination, so the toggle
-        // only ever has these two halves to name — even when `toggledViewMode`
-        // lands in `.source`.
-        viewModeButton?.toolTip = editor.viewMode == .reading
-            ? "Switch to Edit View" : "Switch to Read View"
+    /// A view-mode icon sized to match its sibling's drawn size.
+    ///
+    /// 15pt matches the formatting glyphs beside it (FormatToolbar.symbol).
+    /// `book` is sized down from that: its intrinsic box is taller than
+    /// `pencil`'s, so at a shared point size it draws visibly bigger (measured
+    /// 17.5pt tall against the pencil's 15.0pt), which would make the two
+    /// segments look mismatched. These two numbers are chosen so the *drawn*
+    /// glyphs match, which is what the eye compares.
+    private func sizedIcon(for mode: EditorTextView.ViewMode) -> NSImage? {
+        let pointSize: CGFloat = mode == .reading ? 12.9 : 15
+        return icon(for: mode)?.withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
+    }
+
+    /// Keeps the toolbar's Edit/Read segmented switch selection in sync with
+    /// the editor's actual mode — Source counts as the "editing" segment,
+    /// since it isn't a third stop on this switch.
+    private func refreshViewModeSelection() {
+        guard let editor, let viewModeGroup else { return }
+        viewModeGroup.selectedIndex = editor.viewMode == .reading ? 1 : 0
     }
 
     private func setViewMode(_ mode: EditorTextView.ViewMode) {
@@ -612,7 +614,7 @@ class Document: NSDocument, HeadingNavigable {
         if mode == .reading { captureReadEntryAnchor() }
         editor.viewMode = mode
         applyViewMode(mode)
-        refreshViewModeButton()
+        refreshViewModeSelection()
     }
 
     /// The Edit→Read entry position, captured by `setViewMode` while the
@@ -815,9 +817,6 @@ class Document: NSDocument, HeadingNavigable {
         AppSettings.sourceMode ? .source : .edit
     }
 
-    @objc private func selectEditMode(_ sender: Any?)    { setViewMode(editingMode) }
-    @objc private func selectReadingMode(_ sender: Any?) { setViewMode(.reading) }
-
     /// The "Show source in editor" checkbox (button menu and View menu).
     /// Persists the setting and, if we're in the editing view, swaps it to
     /// the new editing mode right away.
@@ -955,17 +954,23 @@ class Document: NSDocument, HeadingNavigable {
         return super.validateMenuItem(item)
     }
 
-    /// Toggle the editing view ↔ Read (the View-menu ⌘E item and the toolbar
-    /// button). With source mode on the editing view is Source, so this flips
-    /// Source ↔ Read; otherwise Edit ↔ Read.
+    /// Toggle the editing view ↔ Read (the View-menu ⌘E item). With source mode
+    /// on the editing view is Source, so this flips Source ↔ Read; otherwise
+    /// Edit ↔ Read.
     @objc func toggleViewMode(_ sender: Any?) {
         setViewMode(toggledViewMode)
     }
 
-    /// Where `toggleViewMode` would land — also what the button's tooltip names,
-    /// so the two can't say different things.
+    /// Where `toggleViewMode` would land.
     private var toggledViewMode: EditorTextView.ViewMode {
         editor?.viewMode == .reading ? editingMode : .reading
+    }
+
+    /// The toolbar's Edit/Read segmented switch. Selects the mode directly by
+    /// segment rather than toggling, since a segmented control picks a side
+    /// rather than flipping a state.
+    @objc private func viewModeSegmentChanged(_ sender: NSToolbarItemGroup) {
+        setViewMode(sender.selectedIndex == 1 ? .reading : editingMode)
     }
 
     /// "Inspect Reader" (⌥⌘I) — a semi-toggle, so one shortcut always gets you
@@ -981,32 +986,6 @@ class Document: NSDocument, HeadingNavigable {
         // The read view is created (and its HTML rendered) by `setViewMode`, so
         // by here `readView` exists even on the first entry into Read mode.
         readView?.showWebInspector(nil)
-    }
-
-    /// One mode menu item: icon + title, checked when `on`.
-    private func menuItem(_ title: String, _ image: NSImage?,
-                          _ action: Selector, on: Bool) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        item.image = image
-        item.state = on ? .on : .off
-        return item
-    }
-
-    /// The right-click menu: Edit / Read selection, a divider, then the
-    /// "Show source in editor" checkbox. Built fresh each time so state stays current.
-    fileprivate func viewModeMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.autoenablesItems = false   // actions always fire on selection
-        let inEditing = editor?.viewMode != .reading
-        menu.addItem(menuItem("Edit", icon(for: .edit),
-                              #selector(selectEditMode(_:)), on: inEditing))
-        menu.addItem(menuItem("Read", icon(for: .reading),
-                              #selector(selectReadingMode(_:)), on: !inEditing))
-        menu.addItem(.separator())
-        menu.addItem(menuItem("Show source in editor", nil,
-                              #selector(toggleSourceMode(_:)), on: AppSettings.sourceMode))
-        return menu
     }
 
     // MARK: - Writing
@@ -1058,22 +1037,22 @@ extension Document: NSToolbarDelegate {
         guard itemIdentifier == Self.viewModeItemID else {
             return formatToolbar.makeItem(itemIdentifier)
         }
-        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-        item.label = "View Mode"
-        item.visibilityPriority = .high
-
-        // Left-click toggles the editing view ↔ Read. The right-click mode menu
-        // is handled upstream in DocumentWindow.sendEvent — every view-level
-        // approach (the view's `menu`, rightMouseDown, a gesture recognizer)
-        // loses the secondary click to the toolbar's "Customize Toolbar…" menu.
-        let button = NSButton(image: NSImage(), target: self,
-                              action: #selector(toggleViewMode(_:)))
-        button.bezelStyle = .texturedRounded
-        button.imagePosition = .imageOnly
-        viewModeButton = button
-        item.view = button
-        refreshViewModeButton()
-        return item
+        // A real segmented switch rather than a single toggling button — one
+        // code path for every supported OS version; it just renders as plain
+        // Aqua segments pre-26 and as glass ones on 26+.
+        let group = NSToolbarItemGroup(
+            itemIdentifier: itemIdentifier,
+            images: [sizedIcon(for: .edit) ?? NSImage(), sizedIcon(for: .reading) ?? NSImage()],
+            selectionMode: .selectOne,
+            labels: [label(for: .edit), label(for: .reading)],
+            target: self,
+            action: #selector(viewModeSegmentChanged(_:))
+        )
+        group.label = "View Mode"
+        group.visibilityPriority = .high
+        viewModeGroup = group
+        refreshViewModeSelection()
+        return group
     }
 }
 

@@ -371,8 +371,18 @@ enum ReproScript {
                            "additionalTopInset=\(doc.editor.additionalTopInset) " +
                            "accessoryCount=\(window.titlebarAccessoryViewControllers.count)")
                     for (i, accessory) in window.titlebarAccessoryViewControllers.enumerated() {
+                        let view = accessory.view
+                        let screenFrame = view.window.map { $0.convertToScreen(view.convert(view.bounds, to: nil)) }
+                        var ancestorHidden = [String]()
+                        var v: NSView? = view
+                        while let cur = v {
+                            ancestorHidden.append("\(type(of: cur)):hidden=\(cur.isHidden),alpha=\(cur.alphaValue)")
+                            v = cur.superview
+                        }
                         report("repro glass accessory[\(i)] hidden=\(accessory.isHidden) " +
-                               "frame=\(accessory.view.frame) fullScreenMinHeight=\(accessory.fullScreenMinHeight)")
+                               "frame=\(view.frame) screenFrame=\(String(describing: screenFrame)) " +
+                               "fullScreenMinHeight=\(accessory.fullScreenMinHeight) " +
+                               "ancestors=\(ancestorHidden.joined(separator: " < "))")
                     }
                 }
             case "clicktoolbar":

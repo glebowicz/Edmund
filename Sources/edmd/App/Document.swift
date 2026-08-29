@@ -33,13 +33,13 @@ class Document: NSDocument, HeadingNavigable {
     /// `findController.barView`'s key-view chain to verify Tab order.
     var findController: FindController!
     private var formatBar: FormatBarView!
+    /// The view actually stacked in `containerView` for the format bar: on
+    /// 26+ this is the `NSGlassEffectView` wrapping `formatBar` (see
+    /// `GlassChrome.wrap`), so it should be `layoutTopBars` and hit-testing's
+    /// only reference to size/position — `formatBar` itself just fills it.
+    /// Pre-26 there is no wrapper, and this is `formatBar` itself.
+    private var formatBarHost: NSView!
     private var readView: ReadModeWebView?
-
-    /// Titlebar accessories hosting `formatBar`/`findController.barView` on
-    /// macOS 26+ — see `GlassChrome`. `nil` pre-26, where the bars are plain
-    /// `containerView` subviews instead.
-    private var formatAccessory: NSTitlebarAccessoryViewController?
-    private var findAccessory: NSTitlebarAccessoryViewController?
 
     /// Editor character offset captured when entering Read mode (the topmost
     /// visible line at the moment of the switch), used to scroll the editor
@@ -296,27 +296,23 @@ class Document: NSDocument, HeadingNavigable {
         // contentMinSize scar documented at FindController.init).
         formatBar = FormatBarView(frame: .zero)
         formatBar.isHidden = true
-        formatBar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
         if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
-            // Hosted as a titlebar accessory below instead — one continuous
-            // glass surface with the toolbar, not a second material layer
-            // stacked inside `containerView`.
+            // Glass-wrapped (see `GlassChrome.wrap`): the wrapper is the
+            // `containerView` child pinned to the top edge, and `formatBar`
+            // just fills it.
+            let host = GlassChrome.wrap(formatBar)
+            host.autoresizingMask = [.width, .minYMargin]
+            formatBar.autoresizingMask = [.width, .height]
+            host.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
+            formatBar.frame = NSRect(origin: .zero, size: host.frame.size)
+            containerView.addSubview(host, positioned: .below, relativeTo: statusBar)
+            formatBarHost = host
         } else {
+            formatBar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
             formatBar.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
             // Below the floating status bar so counts stay on top.
             containerView.addSubview(formatBar, positioned: .below, relativeTo: statusBar)
-        }
-
-        // On 26+, both bars ride the titlebar as glass accessories — format
-        // bar first so it lands above the find bar, matching the on-screen
-        // order the pre-26 `containerView` stacking produces.
-        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
-            let formatAccessory = GlassChrome.makeAccessory(for: formatBar)
-            let findAccessory = GlassChrome.makeAccessory(for: findController.barView)
-            window.addTitlebarAccessoryViewController(formatAccessory)
-            window.addTitlebarAccessoryViewController(findAccessory)
-            self.formatAccessory = formatAccessory
-            self.findAccessory = findAccessory
+            formatBarHost = formatBar
         }
 
         NotificationCenter.default.addObserver(
@@ -343,12 +339,13 @@ class Document: NSDocument, HeadingNavigable {
             self, selector: #selector(windowDidExitFullScreen(_:)),
             name: NSWindow.didExitFullScreenNotification, object: window
         )
-        // `layoutTopBars()`'s 26+ branch picks its inset source by
-        // `styleMask.contains(.fullScreen)` — see the comment there. Nothing
-        // else re-runs it across this transition (a plain resize doesn't
-        // change the bar heights that drive the inset, so it doesn't need
-        // to), so both edges of full screen must trigger it explicitly or
-        // the inset is left computed for the mode the window just left.
+        // `layoutTopBars()` re-sources the inset from `contentLayoutRect`,
+        // which reports a different height once the real toolbar moves into
+        // its own full-screen window (see the comment there) — nothing else
+        // re-runs `layoutTopBars()` across this transition (a plain resize
+        // doesn't change that relationship, so it doesn't need to), so both
+        // edges of full screen must trigger it explicitly or the inset is
+        // left computed for the mode the window just left.
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowDidEnterFullScreen(_:)),
             name: NSWindow.didEnterFullScreenNotification, object: window
@@ -928,41 +925,31 @@ class Document: NSDocument, HeadingNavigable {
     /// used to write it directly, and a second writer (this bar) would clobber
     /// whichever ran last. Order in the array is the on-screen order (top
     /// first): format bar above find bar.
+    ///
+    /// One code path for every OS version and both windowed/full-screen: each
+    /// bar's *host* (the `containerView` child — the bar itself pre-26, or its
+    /// `NSGlassEffectView` wrapper on 26+, see `GlassChrome.wrap`) is stacked
+    /// downward from `window.contentLayoutRect.height`, and the leftover gap
+    /// to `containerView`'s own height becomes the editor's inset.
+    ///
+    /// `contentLayoutRect.height` already equals `containerView.bounds.height`
+    /// pre-26 (no toolbar to subtract, since `.fullSizeContentView` is 26+
+    /// only) and on 26+ **in full screen** (measured live: the real toolbar
+    /// moves into its own `NSToolbarFullScreenWindow` there, so it no longer
+    /// overlaps this window's content at all) — both cases fall out of this
+    /// one formula without a special case. Only 26+ *windowed* actually
+    /// subtracts anything, for the real glass toolbar above the bars.
     func layoutTopBars() {
-        if #available(macOS 26.0, *), let formatAccessory, let findAccessory {
-            GlassChrome.sync(bar: formatBar, accessory: formatAccessory)
-            GlassChrome.sync(bar: findController.barView, accessory: findAccessory)
-            let window = windowControllers.first?.window
-            if let window, window.styleMask.contains(.fullScreen) {
-                // `contentLayoutRect` reports the *full* window bounds in full
-                // screen, not bounds-minus-chrome — measured live, and not a
-                // transient animation artifact (unchanged 5s after the
-                // transition settles). The system toolbar auto-hides there
-                // and its own scroll-edge effect covers it without a manual
-                // reserve; only our own accessories still need one, since
-                // `fullScreenMinHeight` (in `GlassChrome.sync`) keeps an open
-                // find/format bar pinned regardless of `AppSettings
-                // .autoHideToolbar`.
-                editor.additionalTopInset = [formatBar!, findController.barView]
-                    .filter { !$0.isHidden }
-                    .reduce(0) { $0 + $1.preferredHeight }
-            } else {
-                // `contentLayoutRect` already accounts for the toolbar *and*
-                // both accessories in windowed mode — deriving the inset from
-                // it (rather than summing bar heights, which never included
-                // the toolbar) is what makes the document rest below all of
-                // the glass chrome, not just the bars, once `containerView`
-                // spans the full window height.
-                let contentHeight = window?.contentLayoutRect.height ?? containerView.bounds.height
-                editor.additionalTopInset = containerView.bounds.height - contentHeight
-            }
-            return
-        }
-        var y = containerView.bounds.height
-        for bar in [formatBar!, findController.barView] where !bar.isHidden {
+        let window = windowControllers.first?.window
+        var y = window?.contentLayoutRect.height ?? containerView.bounds.height
+        let bars: [(ChromeBarView, NSView)] = [(formatBar!, formatBarHost!),
+                                                (findController.barView, findController.barHost!)]
+        for (bar, host) in bars where !bar.isHidden {
             let h = bar.preferredHeight
             y -= h
-            bar.frame = NSRect(x: 0, y: y, width: containerView.bounds.width, height: h)
+            host.frame = NSRect(x: 0, y: y, width: containerView.bounds.width, height: h)
+            // `host` is `bar` itself pre-26 — a no-op reassignment there.
+            if host !== bar { bar.frame = NSRect(origin: .zero, size: host.frame.size) }
         }
         editor.additionalTopInset = containerView.bounds.height - y
     }

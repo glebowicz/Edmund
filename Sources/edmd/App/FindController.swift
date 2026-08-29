@@ -24,6 +24,11 @@ final class FindController: NSObject, EditorFindHandling {
     /// The bar view, exposed for `Document.layoutTopBars()`.
     var barView: FindBarView { bar }
 
+    /// The view actually stacked in `container` — the `NSGlassEffectView`
+    /// wrapping `bar` on 26+ (see `GlassChrome.wrap`), or `bar` itself
+    /// pre-26. `Document.layoutTopBars()` positions/sizes this, not `bar`.
+    private(set) var barHost: NSView!
+
     /// The scroll view's top content inset before we pushed content down for the
     /// bar (usually the toolbar overlap). Restored on hide.
     private var isShowing = false
@@ -37,26 +42,30 @@ final class FindController: NSObject, EditorFindHandling {
         editor.findHandler = self
 
         bar.isHidden = true
-        bar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
+        // Park it at the container's full width, not the default zero frame.
+        // A flexible-width autoresizing view only grows by the *delta* from the
+        // width it was added at, so a zero-width bar reaches the minimum width
+        // its own (required) constraints demand — the fields and buttons — only
+        // once the window is that much wider than it started. AppKit turns that
+        // into the window's contentMinSize, which both pins the minimum width to
+        // `initial width + bar minimum` and inflates the opening frame to match,
+        // leaving `window.minSize` moot. Sized here, the bar tracks the container
+        // and the window's own minSize governs again. `layoutBar` positions it
+        // (and sets the content inset) on every show.
         if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
-            // Hosted as a titlebar accessory instead — see
-            // `Document.makeWindowControllers`/`GlassChrome`. AppKit stretches
-            // a bottom accessory's view to the window's width itself, so none
-            // of the container-sizing dance below is needed on this path.
-        } else {
-            // Park it at the container's full width, not the default zero frame.
-            // A flexible-width autoresizing view only grows by the *delta* from the
-            // width it was added at, so a zero-width bar reaches the minimum width
-            // its own (required) constraints demand — the fields and buttons — only
-            // once the window is that much wider than it started. AppKit turns that
-            // into the window's contentMinSize, which both pins the minimum width to
-            // `initial width + bar minimum` and inflates the opening frame to match,
-            // leaving `window.minSize` moot. Sized here, the bar tracks the container
-            // and the window's own minSize governs again. `layoutBar` positions it
-            // (and sets the content inset) on every show.
-            bar.setFrameSize(NSSize(width: container.bounds.width, height: bar.preferredHeight))
+            let host = GlassChrome.wrap(bar)
+            host.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
+            bar.autoresizingMask = [.width, .height]
+            host.setFrameSize(NSSize(width: container.bounds.width, height: bar.preferredHeight))
+            bar.frame = NSRect(origin: .zero, size: host.frame.size)
             // Below the floating status bar so counts stay on top.
+            container.addSubview(host, positioned: .below, relativeTo: statusBar)
+            barHost = host
+        } else {
+            bar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
+            bar.setFrameSize(NSSize(width: container.bounds.width, height: bar.preferredHeight))
             container.addSubview(bar, positioned: .below, relativeTo: statusBar)
+            barHost = bar
         }
 
         bar.onSearchChanged = { [weak self] in self?.runSearch(resetToFirst: true) }

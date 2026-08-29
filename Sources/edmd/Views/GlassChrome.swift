@@ -22,68 +22,36 @@ enum GlassChrome {
         UserDefaults.standard.bool(forKey: "debug.forceLegacyChrome")
     }
 
-    /// Wraps `bar` as a bottom titlebar accessory so it becomes part of the
-    /// same continuous glass surface as the toolbar — "always avoid glass on
-    /// glass" (WWDC25 "Meet Liquid Glass") rules out a second material layer
-    /// stacked under it.
+    /// Wraps `bar` in an `NSGlassEffectView` for real glass occlusion —
+    /// confirmed live, by a controlled same-geometry A/B capture, that a
+    /// bare `ChromeBarView` gets no occlusion of its own: scrolled text
+    /// passed through it sharp and fully legible, where the wrapper turns
+    /// that into the frosted, blurred pass-through real Liquid Glass shows.
+    /// `bar` becomes its `contentView`; `bar` itself still paints no
+    /// material of its own (`ChromeBarView.isGlass`), since the glass now
+    /// lives one level up — a single glass layer, not glass-on-glass.
     ///
-    /// The accessory's own `view` is an `NSGlassEffectView`, not `bar`
-    /// directly. Confirmed live, by a controlled same-geometry A/B capture
-    /// (`glass-09` vs. `glass-07`/`glass-08`): hosting `bar` directly gives it
-    /// no occlusion of its own — scrolled text passed through the icon row
-    /// sharp and fully legible. Wrapping it in `NSGlassEffectView` turns that
-    /// into the frosted, blurred pass-through real Liquid Glass shows. `bar`
-    /// becomes its `contentView`; `bar` itself still paints no material of
-    /// its own (`ChromeBarView.isGlass`), since the glass now lives one level
-    /// up. Default `.regular` style — `.clear` was tried and is barely
-    /// distinguishable from no wrapper at all, since it's the low-occlusion
-    /// variant.
-    ///
-    /// `automaticallyAdjustsSize = false`: the default snaps a bottom
-    /// accessory to a fixed system height, which would clip the find bar's
-    /// taller Replace row and override the format bar's deliberate 28pt.
-    /// Height is driven by `bar.preferredHeight` instead, kept current by
-    /// `sync(bar:accessory:)` on every layout pass.
+    /// The wrapper is hosted as a plain `containerView` subview (see
+    /// `Document`/`FindController`), the same way as pre-26 — **not** as an
+    /// `NSTitlebarAccessoryViewController`, despite that being the first
+    /// approach tried here. Measured live in full screen with a repro
+    /// script (`-debug.reproScript`'s `logglass`, extended to print each
+    /// accessory's screen-space frame and ancestor chain): an accessory's
+    /// view gets reparented into a separate `NSToolbarFullScreenWindow`
+    /// along with the rest of the titlebar/toolbar, and that window parks
+    /// off-screen above the display whenever the system auto-hides the
+    /// toolbar (`AppSettings.autoHideToolbar`, on by default) — so an open
+    /// find/format bar vanished completely, with the reserved
+    /// `additionalTopInset` left as blank space where it used to be.
+    /// `NSTitlebarAccessoryViewController.fullScreenMinHeight` does not
+    /// prevent this: set either at construction or on every layout pass,
+    /// the accessory's screen-space origin measured identical to the
+    /// retracted toolbar window's either way. A `containerView` child is
+    /// immune to the whole mechanism, exactly as it was pre-26.
     @available(macOS 26.0, *)
-    static func makeAccessory(for bar: ChromeBarView) -> NSTitlebarAccessoryViewController {
+    static func wrap(_ bar: ChromeBarView) -> NSGlassEffectView {
         let glass = NSGlassEffectView()
         glass.contentView = bar
-
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.view = glass
-        accessory.layoutAttribute = .bottom
-        accessory.automaticallyAdjustsSize = false
-        accessory.isHidden = bar.isHidden
-        // Kept as correct configuration for a scroll-edge accessory, though
-        // measured live to make no visible difference on its own — the
-        // `NSGlassEffectView` wrapper above is what actually stops the
-        // bleed-through. 26.1-only, a narrower gate than the rest of this
-        // migration.
-        if #available(macOS 26.1, *) {
-            accessory.preferredScrollEdgeEffectStyle = .soft
-        }
-        return accessory
-    }
-
-    /// Re-reads `bar`'s current height/visibility into its accessory.
-    ///
-    /// Also sets `fullScreenMinHeight`, which defaults to 0 — designed for
-    /// cosmetic accessories, not a bar the user just opened with ⌘F. Without
-    /// this, an open find/format bar is fully clipped the moment full screen
-    /// auto-hides the menu bar.
-    @available(macOS 26.0, *)
-    static func sync(bar: ChromeBarView, accessory: NSTitlebarAccessoryViewController) {
-        accessory.isHidden = bar.isHidden
-        let height = bar.isHidden ? 0 : bar.preferredHeight
-        // `accessory.view` is the `NSGlassEffectView` wrapper, not `bar`.
-        // Both are resized explicitly here rather than leaning on `bar`'s
-        // autoresizing mask — that mask is `[.width, .minYMargin]`, set by
-        // `Document`/`FindController` to pin the bar pre-26, and is load-
-        // bearing there; this path must not depend on overwriting it.
-        var frame = accessory.view.frame
-        frame.size.height = height
-        accessory.view.frame = frame
-        bar.frame = NSRect(origin: .zero, size: frame.size)
-        accessory.fullScreenMinHeight = height
+        return glass
     }
 }

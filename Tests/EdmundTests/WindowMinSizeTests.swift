@@ -49,19 +49,25 @@ struct WindowMinSizeTests {
         let findController = FindController(editor: editor, scrollView: scrollView,
                                             container: container, statusBar: statusBar)
 
-        let barInContainer = container.subviews.first { $0 is FindBarView }
+        // The bar's *host* is what actually lands in `container` and must
+        // span its width — the bar itself pre-26, or the `NSGlassEffectView`
+        // wrapping it on 26+ (see `GlassChrome.wrap`). A titlebar-accessory
+        // hosting model was tried and abandoned here: measured live, an
+        // accessory's view gets reparented into full screen's separate
+        // toolbar window and retracts off-screen with it whenever the system
+        // auto-hides the toolbar, so the bar is a plain `container` child on
+        // every OS version now, exactly like this test always required.
+        let barHost = findController.barHost
+        #expect(barHost?.superview === container)
+        #expect(barHost?.frame.width == width)
         if #available(macOS 26.0, *) {
-            // On 26+ the bar is hosted as a titlebar accessory instead (see
-            // GlassChrome) — it must NOT land in `container`, or it would
-            // reintroduce the exact contentMinSize scar this test guards
-            // against under the pre-26 hosting path. Checked against the real
-            // bar instance, not just an absence in `container`, so this can't
-            // pass vacuously if construction produced no bar at all.
-            #expect(findController.barView.superview == nil)
-            #expect(barInContainer == nil)
+            // `bar`'s immediate superview is `NSGlassEffectView`'s own private
+            // content-holder subview, not `barHost` directly — `isDescendant`
+            // holds regardless of that internal wrapper.
+            #expect(barHost !== (findController.barView as NSView))
+            #expect(barHost.map { findController.barView.isDescendant(of: $0) } == true)
         } else {
-            #expect(barInContainer === findController.barView)
-            #expect(barInContainer?.frame.width == width)
+            #expect(barHost === (findController.barView as NSView))
         }
     }
 }

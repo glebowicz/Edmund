@@ -39,6 +39,8 @@ import WebKit
 ///                     chrome (titlebar accessories, additionalTopInset) survives
 ///                     the transition — the same real path Cmd-Ctrl-F takes,
 ///                     just invoked in-process instead of through a menu click
+///   logkeyloop        walk the find bar's nextKeyView chain from searchField,
+///                     logging each view's type, to verify Tab order
 @MainActor
 enum ReproScript {
 
@@ -334,6 +336,23 @@ enum ReproScript {
                     guard let window = doc.windowControllers.first?.window else { return }
                     window.toggleFullScreen(nil)
                     report("repro fullscreen toggled")
+                }
+            case "logkeyloop":
+                // Walks the find bar's `nextKeyView` chain from `searchField`,
+                // the actual data AppKit's Tab/Shift-Tab follows — verifies the
+                // loop is intact and closed (cycles back to `searchField`
+                // rather than escaping into the editor or another accessory)
+                // without needing a synthesized Tab keyDown per hop.
+                scheduleDoc(after: delay) { doc in
+                    let start = doc.findController.barView.searchField
+                    var seen = ["\(type(of: start))"]
+                    var view: NSView? = start.nextKeyView
+                    while let v = view, v !== start, seen.count < 12 {
+                        seen.append("\(type(of: v))")
+                        view = v.nextKeyView
+                    }
+                    let closed = view === start
+                    report("repro keyloop closed=\(closed) chain=\(seen.joined(separator: " -> "))")
                 }
             case "logglass":
                 // Liquid Glass chrome geometry, checkable without a rendered

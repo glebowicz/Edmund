@@ -28,7 +28,10 @@ class Document: NSDocument, HeadingNavigable {
     /// editor out for a `ReadModeWebView` (created lazily on first read).
     private var scrollView: NSScrollView!
     private var containerView: NSView!
-    private var findController: FindController!
+    /// Internal, not private: `-debug.reproScript`'s `logkeyloop` command
+    /// (ReproScript.swift, a different file in this module) walks
+    /// `findController.barView`'s key-view chain to verify Tab order.
+    var findController: FindController!
     private var formatBar: FormatBarView!
     private var readView: ReadModeWebView?
 

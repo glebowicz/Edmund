@@ -340,6 +340,16 @@ class Document: NSDocument, HeadingNavigable {
             self, selector: #selector(windowDidExitFullScreen(_:)),
             name: NSWindow.didExitFullScreenNotification, object: window
         )
+        // `layoutTopBars()`'s 26+ branch picks its inset source by
+        // `styleMask.contains(.fullScreen)` — see the comment there. Nothing
+        // else re-runs it across this transition (a plain resize doesn't
+        // change the bar heights that drive the inset, so it doesn't need
+        // to), so both edges of full screen must trigger it explicitly or
+        // the inset is left computed for the mode the window just left.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidEnterFullScreen(_:)),
+            name: NSWindow.didEnterFullScreenNotification, object: window
+        )
 
         // Restore the last window's frame size (the toolbar is now installed, so
         // the frame is final). Applied as a frame, not a contentRect, so it
@@ -385,8 +395,13 @@ class Document: NSDocument, HeadingNavigable {
         editor?.maxContentWidthPoints = screen.cmToPoints(AppSettings.maxContentWidthCm) * zoomFactor
     }
 
+    @objc private func windowDidEnterFullScreen(_ notification: Notification) {
+        layoutTopBars()
+    }
+
     @objc private func windowDidExitFullScreen(_ notification: Notification) {
         applyToolbarVisibility()
+        layoutTopBars()
     }
 
     // MARK: - Zoom (View ▸ Actual Size / Zoom In / Zoom Out)
@@ -914,14 +929,30 @@ class Document: NSDocument, HeadingNavigable {
         if #available(macOS 26.0, *), let formatAccessory, let findAccessory {
             GlassChrome.sync(bar: formatBar, accessory: formatAccessory)
             GlassChrome.sync(bar: findController.barView, accessory: findAccessory)
-            // `contentLayoutRect` already accounts for the toolbar *and* both
-            // accessories — deriving the inset from it (rather than summing
-            // bar heights, which never included the toolbar) is what makes
-            // the document rest below all of the glass chrome, not just the
-            // bars, once `containerView` spans the full window height.
             let window = windowControllers.first?.window
-            let contentHeight = window?.contentLayoutRect.height ?? containerView.bounds.height
-            editor.additionalTopInset = containerView.bounds.height - contentHeight
+            if let window, window.styleMask.contains(.fullScreen) {
+                // `contentLayoutRect` reports the *full* window bounds in full
+                // screen, not bounds-minus-chrome — measured live, and not a
+                // transient animation artifact (unchanged 5s after the
+                // transition settles). The system toolbar auto-hides there
+                // and its own scroll-edge effect covers it without a manual
+                // reserve; only our own accessories still need one, since
+                // `fullScreenMinHeight` (in `GlassChrome.sync`) keeps an open
+                // find/format bar pinned regardless of `AppSettings
+                // .autoHideToolbar`.
+                editor.additionalTopInset = [formatBar!, findController.barView]
+                    .filter { !$0.isHidden }
+                    .reduce(0) { $0 + $1.preferredHeight }
+            } else {
+                // `contentLayoutRect` already accounts for the toolbar *and*
+                // both accessories in windowed mode — deriving the inset from
+                // it (rather than summing bar heights, which never included
+                // the toolbar) is what makes the document rest below all of
+                // the glass chrome, not just the bars, once `containerView`
+                // spans the full window height.
+                let contentHeight = window?.contentLayoutRect.height ?? containerView.bounds.height
+                editor.additionalTopInset = containerView.bounds.height - contentHeight
+            }
             return
         }
         var y = containerView.bounds.height

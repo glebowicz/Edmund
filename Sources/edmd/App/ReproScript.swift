@@ -31,6 +31,14 @@ import WebKit
 ///   clickrow <title>  press a format-popover row by its title
 ///   clickicon <id>    press a format-popover icon button by its style id
 ///   assertsource <s>  PASS iff <s> appears in the document
+///   resize <w> <h>    set the window's content size to w×h
+///   logglass          log Liquid Glass chrome geometry (styleMask,
+///                     titlebarSeparatorStyle, contentLayoutRect,
+///                     additionalTopInset, per-accessory frame/fullScreenMinHeight)
+///   fullscreen        toggle full screen via the window's own action, to check
+///                     chrome (titlebar accessories, additionalTopInset) survives
+///                     the transition — the same real path Cmd-Ctrl-F takes,
+///                     just invoked in-process instead of through a menu click
 @MainActor
 enum ReproScript {
 
@@ -317,6 +325,15 @@ enum ReproScript {
                     guard f.count == 2, let w = Double(f[0]), let h = Double(f[1]) else { return }
                     window.setContentSize(NSSize(width: w, height: h))
                     report("repro resize \(w)x\(h)")
+                }
+            case "fullscreen":
+                // `toggleFullScreen(nil)` is the same action the green-button
+                // Option-click and Cmd-Ctrl-F menu item send — no AX/CGEvent
+                // needed, so it's not blocked the way activating the app is.
+                scheduleDoc(after: delay) { doc in
+                    guard let window = doc.windowControllers.first?.window else { return }
+                    window.toggleFullScreen(nil)
+                    report("repro fullscreen toggled")
                 }
             case "logglass":
                 // Liquid Glass chrome geometry, checkable without a rendered

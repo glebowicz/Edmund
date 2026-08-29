@@ -200,7 +200,7 @@ rawSource ─BlockParser─▶ [Block] ─SyntaxHighlighter─▶ spans ─style
 | Crash-log uploading | `EdmundCore/Diagnostics/CrashReporter.swift` (§7) |
 | Auto-update | Sparkle 2.x. `Info.plist`: `SUFeedURL` (raw GitHub URL to `appcast.xml`), `SUPublicEDKey`. `scripts/release.sh`: build → DMG (sindresorhus `create-dmg`, **npm** — not the homebrew tool) → EdDSA sign → update appcast → `gh release create`. The DMG is the Sparkle enclosure. CI: `.github/workflows/release.yml` (tag-triggered). Full pipeline + signing + `RELEASE_TOKEN`: §13. |
 | Find & Replace | `EdmundCore/Find/FindEngine.swift` (pure search), `TextView/EditorTextView+Find.swift` (match state, highlight drawing, pop animation, `EditorFindHandling`), `edmd/Views/FindBarView.swift` (the bar), `edmd/App/FindController.swift` (mediator); Edit ▸ Find menu in `main.swift` |
-| Format bar | `edmd/Views/FormatBarView.swift` (layout + state refresh) and `FormatBarControls.swift` (the controls), on `ChromeBarView.swift` (titlebar-material + hairline base shared with the find bar), `edmd/App/FormatMenu.swift` (the two pulldowns are the same `headingMenu()`/`calloutMenu()` factories as the Format menu — one menu definition, three homes), `Document.formatBar` (owned by the document; **off by default**, toggled by View ▸ Show/Hide Format Bar, `settings.edit.showFormatBar`, force-hidden in Reading mode). Stacks **above** the find bar, both through `layoutTopBars()` (§6 top-bar insets). Bar is horizontally centred by design (a narrow window clips the same reachable band on both sides) |
+| Format bar | `edmd/Views/FormatBarView.swift` (layout + state refresh) and `FormatBarControls.swift` (the controls), on `ChromeBarView.swift` (titlebar-material + hairline base shared with the find bar), `edmd/App/FormatMenu.swift` (the two pulldowns are the same `headingMenu()`/`calloutMenu()` factories as the Format menu — one menu definition, three homes), `Document.formatBar` (owned by the document; **off by default**, toggled by View ▸ Show/Hide Format Bar, `settings.edit.showFormatBar`, force-hidden in Reading mode). Stacks **above** the find bar, both through `layoutTopBars()` (§6 top-bar insets). Bar is horizontally centred by design (a narrow window clips the same reachable band on both sides — on 26+ that means the outermost capsules leave the window entirely at widths near the 320pt minimum). On 26+ each of its five control groups rides in its own `NSGlassEffectView` capsule (§ Liquid Glass chrome) and the intra-group hairlines are dropped |
 | Format-bar on-state | `EdmundCore/Editing/EditorTextView+FormattingState.swift` — the read-only counterpart to the toggles: `activeFormattingActions()`, `activeHeadingLevel()`, `activeCalloutType()`, refreshed from `editorDidChange` / `editorSelectionDidChange`. It scans **source delimiters, not rendered attributes**, because the attributes are lossy for this: a heading is also bold, and `==mark==` and a code span are both a background fill. Star *run length* is what separates `*x*` / `**x**` / `***x***`. A callout deliberately does not also light Block Quote (it is one underneath, but the callout pulldown gives the more specific answer). Hover/on chips live on `BarControlChip`; a chip is a fixed-height box centred on the bar's `interior`, **not** on the control's own bounds — sizing it per control made every symbol a different chip height. |
 | Standard text menus | `edmd/App/main.swift` — Edit ▸ Spelling and Grammar, Transformations, Speech; stock `NSTextView` actions routed to the first responder. **Substitutions is deliberately excluded** (§8) |
 | Status bar | `edmd/Views/StatusBarView.swift` |
@@ -250,9 +250,16 @@ Notable subsystems:
   (`applyTopBarInset`, `+ContentWidth.swift`). The find and format bars stack
   under the toolbar and hand their combined height to `editor.additionalTopInset`
   via `Document.layoutTopBars()` — the sole writer, so a resize recomputing the
-  overscroll can't drop a bar's share. The hit-testing objection above does not
-  apply here: the band a top bar costs is the band it covers, so the live area
-  only loses what the reader could not click anyway.
+  overscroll can't drop a bar's share. `layoutTopBars()` also carries each bar's
+  visibility onto its host view, not just the bar: on 26+ that used to be an
+  `NSGlassEffectView` wrapper, and hiding only the bar inside it left the
+  wrapper frosting an empty band across the middle of the document.
+  - Pre-26, the band a top bar costs is the band it covers, so the live area
+    only loses what the reader could not click anyway. **On 26+ that is no
+    longer true**: the bars are floating glass capsules with the document
+    visible between them (§ Liquid Glass chrome), so `ChromeBarView.hitTest`
+    returns nil outside the capsules and the gaps stay clickable text. Without
+    that override the reserved band is an invisible dead strip.
   - The inset does **not** shrink the clip view. The clip still spans the whole
     scroll view and the document scrolls *under* the bar; what moves is the
     scroll range's top end, from 0 to `-inset`. So the bars add no document
@@ -727,6 +734,34 @@ Notable subsystems:
 
 ### AppKit chrome & controls
 
+- **Liquid Glass chrome is capsules, not bars** (26+ only; `GlassChrome.swift`
+  holds every metric and both constructors). A full-bleed `NSGlassEffectView`
+  the width of the window barely reads as glass — it has almost no edge
+  specular or corner highlight per unit area, so scrolled text passed through
+  it near-legible. macOS 26's own apps (Mail, Notes, Pages, Photos, Calendar)
+  never do that: controls sit in floating rounded glass capsules grouped by
+  function, with the document visible between them and **no separators inside
+  a group**. Edmund follows that — five capsules for the format bar's five
+  control groups, one inset rounded panel for the find bar. Three consequences
+  that are not obvious:
+  - **`NSGlassEffectView` sizes its `contentView` to its own bounds** and
+    ignores constraints pinning that content inside the glass. Padding has to
+    come from a wrapper view the glass does not manage (`GlassChrome.padded`);
+    without it the find field ran flush into the panel edge, bezel clipped.
+  - **`NSGlassEffectContainerView.spacing` stays at its default zero.** It is
+    a *merge* proximity: set above the inter-capsule gap it welded all five
+    groups into one continuous pill. Merging is for capsules that move toward
+    each other; a static row wants the container only for its batching.
+  - **The glass lives inside the bar, never wrapping it.** Wrapping was tried:
+    hiding a bar only empties the wrapper's `contentView`, so a closed find bar
+    left a band of glass frosting the middle of the document. `barHost === bar`
+    on every OS version now.
+- **`titlebarAppearsTransparent` stays `false` even on 26+.** `true` does not
+  just let content scroll under (`.fullSizeContentView` alone does that) — it
+  removes the titlebar's own material, and body text ran through it fully
+  sharp. Notes and Pages do allow exactly that, but their windows have opaque
+  sidebars and short toolbars; Edmund's text runs edge to edge under the whole
+  titlebar. Adopting Apple's capsules is not a reason to also adopt the flag.
 - **A custom toolbar item can't win a right-click from a view-level
   handler.** With `allowsUserCustomization = true` the toolbar turns any
   secondary (right / control) click over the toolbar — *including* a custom

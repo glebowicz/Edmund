@@ -27,6 +27,18 @@ enum GlassChrome {
     /// glass" (WWDC25 "Meet Liquid Glass") rules out a second material layer
     /// stacked under it.
     ///
+    /// The accessory's own `view` is an `NSGlassEffectView`, not `bar`
+    /// directly. Confirmed live, by a controlled same-geometry A/B capture
+    /// (`glass-09` vs. `glass-07`/`glass-08`): hosting `bar` directly gives it
+    /// no occlusion of its own — scrolled text passed through the icon row
+    /// sharp and fully legible. Wrapping it in `NSGlassEffectView` turns that
+    /// into the frosted, blurred pass-through real Liquid Glass shows. `bar`
+    /// becomes its `contentView`; `bar` itself still paints no material of
+    /// its own (`ChromeBarView.isGlass`), since the glass now lives one level
+    /// up. Default `.regular` style — `.clear` was tried and is barely
+    /// distinguishable from no wrapper at all, since it's the low-occlusion
+    /// variant.
+    ///
     /// `automaticallyAdjustsSize = false`: the default snaps a bottom
     /// accessory to a fixed system height, which would clip the find bar's
     /// taller Replace row and override the format bar's deliberate 28pt.
@@ -34,17 +46,19 @@ enum GlassChrome {
     /// `sync(bar:accessory:)` on every layout pass.
     @available(macOS 26.0, *)
     static func makeAccessory(for bar: ChromeBarView) -> NSTitlebarAccessoryViewController {
+        let glass = NSGlassEffectView()
+        glass.contentView = bar
+
         let accessory = NSTitlebarAccessoryViewController()
-        accessory.view = bar
+        accessory.view = glass
         accessory.layoutAttribute = .bottom
         accessory.automaticallyAdjustsSize = false
         accessory.isHidden = bar.isHidden
-        // Without this, scrolled content passes fully opaque under the
-        // accessory instead of fading — measured live: body text scrolled
-        // straight through the format bar's icon row, unreadable where they
-        // overlapped. `.softStyle` is what gives it the fade. 26.1-only, a
-        // narrower gate than the rest of this migration; the accessory is
-        // still correct (just without the fade) on 26.0.
+        // Kept as correct configuration for a scroll-edge accessory, though
+        // measured live to make no visible difference on its own — the
+        // `NSGlassEffectView` wrapper above is what actually stops the
+        // bleed-through. 26.1-only, a narrower gate than the rest of this
+        // migration.
         if #available(macOS 26.1, *) {
             accessory.preferredScrollEdgeEffectStyle = .soft
         }
@@ -61,9 +75,15 @@ enum GlassChrome {
     static func sync(bar: ChromeBarView, accessory: NSTitlebarAccessoryViewController) {
         accessory.isHidden = bar.isHidden
         let height = bar.isHidden ? 0 : bar.preferredHeight
-        var frame = bar.frame
+        // `accessory.view` is the `NSGlassEffectView` wrapper, not `bar`.
+        // Both are resized explicitly here rather than leaning on `bar`'s
+        // autoresizing mask — that mask is `[.width, .minYMargin]`, set by
+        // `Document`/`FindController` to pin the bar pre-26, and is load-
+        // bearing there; this path must not depend on overwriting it.
+        var frame = accessory.view.frame
         frame.size.height = height
-        bar.frame = frame
+        accessory.view.frame = frame
+        bar.frame = NSRect(origin: .zero, size: frame.size)
         accessory.fullScreenMinHeight = height
     }
 }

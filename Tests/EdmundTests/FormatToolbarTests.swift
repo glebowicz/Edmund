@@ -23,10 +23,18 @@ import AppKit
 
     private let viewMode = NSToolbarItem.Identifier("viewMode")
 
-    /// The default bar is the one that shipped: view-mode alone, on the right.
+    /// Pre-26 the default bar is the one that shipped: view-mode alone, on the
+    /// right. On 26+ the format groups come first — present in the toolbar but
+    /// hidden until `View ▸ Show Format Bar`, since `NSToolbarItem.isHidden`
+    /// only reaches items that are actually in the bar.
     @Test func defaultOrderMatchesTheSpec() {
         let ids = FormatToolbar.defaultIdentifiers(viewMode: viewMode).map(\.rawValue)
-        #expect(ids == ["NSToolbarFlexibleSpaceItem", "viewMode"])
+        guard FormatToolbar.usesToolbarFormatGroups else {
+            #expect(ids == ["NSToolbarFlexibleSpaceItem", "viewMode"])
+            return
+        }
+        #expect(ids == FormatToolbar.formatGroupIdentifiers.map(\.rawValue)
+                + ["NSToolbarFlexibleSpaceItem", "viewMode"])
     }
 
     /// The point sizes are per symbol precisely so the drawn glyphs match; a
@@ -56,9 +64,15 @@ import AppKit
     /// leading flexible space swallowed all the slack and the group stayed right.
     /// It applies to whatever the user drags in, so it outlives the default bar.
     @Test func theFormattingGroupIsTheCentredSet() {
-        #expect(FormatToolbar.centeredIdentifiers ==
-                [FormatToolbar.format, FormatToolbar.checklist, FormatToolbar.table,
-                 FormatToolbar.image, FormatToolbar.link])
+        var expected: Set<NSToolbarItem.Identifier> =
+            [FormatToolbar.format, FormatToolbar.checklist, FormatToolbar.table,
+             FormatToolbar.image, FormatToolbar.link]
+        // On 26+ the format groups are the run that has to sit in the middle of
+        // the toolbar row, so they join the centred set.
+        if FormatToolbar.usesToolbarFormatGroups {
+            expected.formUnion(FormatToolbar.formatGroupIdentifiers)
+        }
+        #expect(FormatToolbar.centeredIdentifiers == expected)
         #expect(!FormatToolbar.centeredIdentifiers.contains(viewMode))
         #expect(!FormatToolbar.centeredIdentifiers.contains(FormatToolbar.share))
     }
@@ -505,6 +519,16 @@ import AppKit
         for id in FormatToolbar.allowedIdentifiers(viewMode: viewMode)
         where id != .space && id != .flexibleSpace && id != FormatToolbar.share && id != viewMode {
             let item = bar.makeItem(id)
+            // A segmented group carries no image of its own — the glyphs are on
+            // the subitems the convenience constructor made, and its own `view`
+            // is auto-generated and therefore nil. Check the segments instead.
+            if let group = item as? NSToolbarItemGroup, !group.subitems.isEmpty {
+                for (i, subitem) in group.subitems.enumerated() {
+                    #expect((subitem.image?.size.width ?? 0) > 0,
+                            "\(id.rawValue) segment \(i) (\(subitem.label)) has no glyph")
+                }
+                continue
+            }
             let image = item?.image ?? (item?.view as? NSButton)?.image
             #expect((image?.size.width ?? 0) > 0, "\(id.rawValue) has no glyph")
         }

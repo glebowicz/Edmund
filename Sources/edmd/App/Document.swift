@@ -225,13 +225,15 @@ class Document: NSDocument, HeadingNavigable {
         // vends its items.
         //
         // The identifier is versioned: `autosavesConfiguration` persists the item
-        // layout per identifier, so every window that ever ran the one-item
-        // toolbar has `[flexibleSpace, viewMode]` on disk, and that saved set
-        // wins over any new defaults. Bumping the identifier is what makes the
-        // format items appear for existing users; the only customization it
-        // discards is the ordering of a single item.
+        // layout per identifier, so every window that ever ran an older toolbar
+        // has that older set on disk, and the saved set wins over any new
+        // defaults. Bumping the identifier is what makes new default items
+        // appear for existing users, at the cost of resetting whatever they had
+        // arranged. "3" is the 26+ format groups (`FormatToolbarGroups`), which
+        // have to be present in the toolbar — hidden — for the Show Format Bar
+        // toggle to reach them.
         formatToolbar = FormatToolbar(document: self)
-        let toolbar = NSToolbar(identifier: "MainToolbar2")
+        let toolbar = NSToolbar(identifier: "MainToolbar3")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = true
@@ -901,18 +903,36 @@ class Document: NSDocument, HeadingNavigable {
     /// state, and re-stacks the top bars. Called on show, on view-mode change
     /// and from `AppSettings.applyEditSettingsToOpenDocuments()`.
     func refreshFormatBar() {
-        formatBar.isHidden = !AppSettings.showFormatBar || editor.viewMode == .reading
-        formatBar.refreshEnabledState(editor: editor)
+        let wanted = AppSettings.showFormatBar && editor.viewMode != .reading
+        if #available(macOS 26.0, *), FormatToolbar.usesToolbarFormatGroups {
+            // 26+: the controls are toolbar items, so the bar itself never
+            // shows and costs the editor no top inset at all — that is the
+            // 44pt the move gets back. See `FormatToolbarGroups`.
+            formatBar.isHidden = true
+            formatToolbar.setFormatGroupsHidden(!wanted, toolbar: toolbar)
+        } else {
+            formatBar.isHidden = !wanted
+            formatBar.refreshEnabledState(editor: editor)
+        }
         refreshFormatBarState()
         layoutTopBars()
     }
+
+    /// The window's toolbar, if the window controllers have made one yet.
+    private var toolbar: NSToolbar? { windowControllers.first?.window?.toolbar }
 
     /// Just the lit/unlit state of the bar's buttons. Split out from
     /// `refreshFormatBar` because this one runs on every caret move and every
     /// keystroke, where re-deciding visibility and re-stacking the bars would be
     /// wasted work.
     private func refreshFormatBarState() {
-        guard let formatBar, !formatBar.isHidden, let editor else { return }
+        guard let editor else { return }
+        if FormatToolbar.usesToolbarFormatGroups {
+            guard AppSettings.showFormatBar, editor.viewMode != .reading else { return }
+            formatToolbar.refreshFormatGroups(toolbar: toolbar, editor: editor)
+            return
+        }
+        guard let formatBar, !formatBar.isHidden else { return }
         formatBar.refreshActiveState(editor: editor)
     }
 

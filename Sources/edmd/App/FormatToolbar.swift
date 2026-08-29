@@ -28,6 +28,18 @@ final class FormatToolbar: NSObject {
 
     private weak var document: Document?
 
+    /// Per segmented format group (26+, `FormatToolbarGroups`): the selector
+    /// behind each segment, and the selection last pushed into the control.
+    ///
+    /// Here rather than on an `NSToolbarItemGroup` subclass because there is no
+    /// usable subclass: `+groupWithItemIdentifier:images:…` is an Objective-C
+    /// class factory that returns a plain `NSToolbarItemGroup` whatever it is
+    /// sent to, so a subclass's stored properties and `validate()` are simply
+    /// never there (caught by `segmentsLineUpWithTheirActions`). Keyed by item
+    /// identifier, which is the one handle the action callback does get.
+    var segmentActions: [NSToolbarItem.Identifier: [Selector]] = [:]
+    var segmentPushed: [NSToolbarItem.Identifier: [Bool]] = [:]
+
     /// The Link item's button, so `DocumentWindow` can claim its secondary click
     /// for the Link/Wikilink menu (see the note there — a custom item cannot win
     /// that click by itself).
@@ -39,18 +51,29 @@ final class FormatToolbar: NSObject {
     }
 
     /// The formatting group, centred in the window by `centeredItemIdentifiers`.
-    static let centeredIdentifiers: Set<NSToolbarItem.Identifier> =
-        [format, checklist, table, image, link]
+    /// On 26+ the format groups join it: they are the run that has to sit in the
+    /// middle of the row, between the title and the view-mode switch.
+    static var centeredIdentifiers: Set<NSToolbarItem.Identifier> {
+        var ids: Set<NSToolbarItem.Identifier> = [format, checklist, table, image, link]
+        if usesToolbarFormatGroups { ids.formUnion(formatGroupIdentifiers) }
+        return ids
+    }
 
-    /// Just the view-mode button, right-aligned — the toolbar as it shipped. The
-    /// formatting group stays *allowed*, so it can be dragged in from Customize
-    /// Toolbar, but the default bar is bare.
+    /// The view-mode button, right-aligned, and — on 26+ — the format groups,
+    /// which are present but hidden until `View ▸ Show Format Bar` is on (see
+    /// `setFormatGroupsHidden`; they have to be *in* the toolbar for `isHidden`
+    /// to mean anything). The one-off items (Format popover, Checklist, Table,
+    /// Image, Link, Share) stay allowed-only, draggable in from Customize
+    /// Toolbar.
     static func defaultIdentifiers(viewMode: NSToolbarItem.Identifier) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, viewMode]
+        guard usesToolbarFormatGroups else { return [.flexibleSpace, viewMode] }
+        return formatGroupIdentifiers + [.flexibleSpace, viewMode]
     }
 
     static func allowedIdentifiers(viewMode: NSToolbarItem.Identifier) -> [NSToolbarItem.Identifier] {
-        [format, checklist, table, image, link, share, viewMode, .space, .flexibleSpace]
+        var ids: [NSToolbarItem.Identifier] = [format, checklist, table, image, link, share]
+        if usesToolbarFormatGroups { ids += formatGroupIdentifiers }
+        return ids + [viewMode, .space, .flexibleSpace]
     }
 
     /// Builds one of the formatting items, or nil if `id` isn't ours (the
@@ -102,7 +125,9 @@ final class FormatToolbar: NSObject {
             item.delegate = self
             return item
         default:
-            return nil
+            // The 26+ format groups (`FormatToolbarGroups`); nil pre-26, where
+            // those identifiers are neither default nor allowed.
+            return makeFormatGroupItem(id)
         }
     }
 

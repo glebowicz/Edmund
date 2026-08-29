@@ -35,7 +35,11 @@ struct GlassBarVisibilityTests {
 
         AppSettings.showFormatBar = true
         doc.refreshFormatBar()
-        #expect(!formatHost.isHidden)
+        // On 26+ the format controls are toolbar items (`FormatToolbarGroups`),
+        // so the bar itself never shows however the setting reads — that is the
+        // whole point of the move, and a bar that unhides here has taken its
+        // 44pt band back.
+        #expect(formatHost.isHidden == FormatToolbar.usesToolbarFormatGroups)
 
         AppSettings.showFormatBar = false
         doc.refreshFormatBar()

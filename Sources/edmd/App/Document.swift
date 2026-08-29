@@ -142,16 +142,22 @@ class Document: NSDocument, HeadingNavigable {
             defer: false
         )
         window.titleVisibility = .visible
-        // On 26+, the titlebar and toolbar become one continuous glass surface
-        // and the document scrolls under it (`layoutTopBars()` re-sources
-        // `additionalTopInset` from `window.contentLayoutRect` to make room).
-        // Pre-26 keeps the opaque titlebar exactly as before — this is an
-        // SDK-gated addition, not a replacement, of the existing behaviour.
+        // On 26+, the document scrolls under the titlebar/toolbar
+        // (`layoutTopBars()` re-sources `additionalTopInset` from
+        // `window.contentLayoutRect` to make room). Pre-26 keeps the opaque
+        // titlebar exactly as before — this is an SDK-gated addition, not a
+        // replacement, of the existing behaviour.
+        //
+        // `titlebarAppearsTransparent` stays `false` even on 26+: `true`
+        // doesn't just allow content to scroll under (`.fullSizeContentView`
+        // alone does that) — it removes the titlebar's own material outright,
+        // so scrolled text passed through the band above the bars fully
+        // sharp and unoccluded (confirmed live: `glass-10-wrapper-ab.png`'s
+        // titlebar strip, and the user-reported bug screenshot, both show
+        // crisp text sliced by the format bar's top edge). Leaving it `false`
+        // lets AppKit paint its own titlebar glass there instead.
         if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
             window.styleMask.insert(.fullSizeContentView)
-            window.titlebarAppearsTransparent = true
-        } else {
-            window.titlebarAppearsTransparent = false
         }
         window.isMovableByWindowBackground = true
         // Restorable for the whole session, whatever "Reopen windows from last

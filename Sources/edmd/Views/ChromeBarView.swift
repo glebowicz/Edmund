@@ -23,13 +23,15 @@ class ChromeBarView: NSVisualEffectView {
     /// reads as the bar starts below it.
     private static let topSeparatorHeight: CGFloat = 1
 
-    /// The strip that actually reads as the bar: its bounds less the separator
-    /// on its top edge and the hairline it draws along its bottom. Anything
-    /// centred on the bar centres on this — centring on `bounds` looks a point
-    /// high, because a point of those bounds is covered at the top and only
-    /// half a point at the bottom.
+    /// The strip that actually reads as the bar. Pre-26 this is bounds less the
+    /// separator on the top edge and the hairline drawn along the bottom —
+    /// anything centred on the bar centres on this, since centring on `bounds`
+    /// looks a point high (a point of those bounds is covered at the top and
+    /// only half a point at the bottom). On 26+ this view draws neither, so
+    /// there is nothing to subtract.
     var interior: NSRect {
-        NSRect(x: 0, y: Self.hairlineHeight, width: bounds.width,
+        guard !Self.isGlass else { return bounds }
+        return NSRect(x: 0, y: Self.hairlineHeight, width: bounds.width,
                height: max(0, bounds.height - Self.hairlineHeight - Self.topSeparatorHeight))
     }
 
@@ -40,8 +42,41 @@ class ChromeBarView: NSVisualEffectView {
         return fittingSize.height
     }
 
+    /// Whether this bar is hosted as a titlebar accessory and should draw
+    /// none of its own chrome (see `init`).
+    private static var isGlass: Bool {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome { return true }
+        return false
+    }
+
+    /// A 1×1 fully transparent image. `NSVisualEffectView.maskImage` stretches
+    /// across the view and masks only the *material* it draws — never
+    /// subviews — so an all-clear image is the documented way to turn a
+    /// visual-effect view's own backdrop off while keeping its content.
+    private static let transparentMaskImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.clear.set()
+        // `.copy`, not the default `.sourceOver`: compositing clear color
+        // *over* an already-opaque freshly-locked-focus bitmap would leave it
+        // opaque. `.copy` overwrites the pixel (and its alpha) outright.
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill(using: .copy)
+        image.unlockFocus()
+        return image
+    }()
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        if Self.isGlass {
+            // Hosted as a titlebar accessory now — one continuous glass
+            // surface with the toolbar. Masking out this view's own material
+            // lets the titlebar's real glass show through instead of a
+            // second material layer stacked under it — "always avoid glass
+            // on glass" (WWDC25 "Meet Liquid Glass"). No hairline either: a
+            // drawn separator between two glass regions is the same mistake.
+            maskImage = Self.transparentMaskImage
+            return
+        }
         material = .titlebar
         // `.withinWindow`, not `.behindWindow`: behind-window blending samples
         // what is behind the *window* — the desktop — so the bar tracked the
@@ -67,9 +102,11 @@ class ChromeBarView: NSVisualEffectView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     /// Keeps the hairline's colour correct across a light/dark switch — a
-    /// `cgColor` snapshot doesn't follow the appearance on its own.
+    /// `cgColor` snapshot doesn't follow the appearance on its own. No-op on
+    /// 26+, where there is no hairline.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        guard !Self.isGlass else { return }
         effectiveAppearance.performAsCurrentDrawingAppearance {
             bottomBorder.layer?.backgroundColor = NSColor.separatorColor.cgColor
         }

@@ -39,6 +39,15 @@ enum GlassChrome {
         accessory.layoutAttribute = .bottom
         accessory.automaticallyAdjustsSize = false
         accessory.isHidden = bar.isHidden
+        // Without this, scrolled content passes fully opaque under the
+        // accessory instead of fading — measured live: body text scrolled
+        // straight through the format bar's icon row, unreadable where they
+        // overlapped. `.softStyle` is what gives it the fade. 26.1-only, a
+        // narrower gate than the rest of this migration; the accessory is
+        // still correct (just without the fade) on 26.0.
+        if #available(macOS 26.1, *) {
+            accessory.preferredScrollEdgeEffectStyle = .soft
+        }
         return accessory
     }
 

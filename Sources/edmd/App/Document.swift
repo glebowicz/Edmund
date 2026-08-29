@@ -32,13 +32,17 @@ class Document: NSDocument, HeadingNavigable {
     /// (ReproScript.swift, a different file in this module) walks
     /// `findController.barView`'s key-view chain to verify Tab order.
     var findController: FindController!
-    private var formatBar: FormatBarView!
+    /// Internal, not private: `-debug.reproScript`'s `logglass` command
+    /// (ReproScript.swift) reports it alongside `formatBarHost`.
+    private(set) var formatBar: FormatBarView!
     /// The view actually stacked in `containerView` for the format bar: on
     /// 26+ this is the `NSGlassEffectView` wrapping `formatBar` (see
     /// `GlassChrome.wrap`), so it should be `layoutTopBars` and hit-testing's
     /// only reference to size/position — `formatBar` itself just fills it.
     /// Pre-26 there is no wrapper, and this is `formatBar` itself.
-    private var formatBarHost: NSView!
+    /// `private(set)`, matching `FindController.barHost`, so the ghost-band
+    /// regression test can read its visibility.
+    private(set) var formatBarHost: NSView!
     private var readView: ReadModeWebView?
 
     /// Editor character offset captured when entering Read mode (the topmost
@@ -950,7 +954,14 @@ class Document: NSDocument, HeadingNavigable {
         var y = window?.contentLayoutRect.height ?? containerView.bounds.height
         let bars: [(ChromeBarView, NSView)] = [(formatBar!, formatBarHost!),
                                                 (findController.barView, findController.barHost!)]
-        for (bar, host) in bars where !bar.isHidden {
+        for (bar, host) in bars {
+            // The host, not just the bar, carries the visibility: on 26+ it is
+            // an `NSGlassEffectView` wrapper, and hiding only its `contentView`
+            // leaves the wrapper painting a bar-shaped slab of glass with
+            // nothing in it — a ghost band floating wherever `.minYMargin`
+            // last parked it. A no-op pre-26, where `host === bar`.
+            host.isHidden = bar.isHidden
+            guard !bar.isHidden else { continue }
             let h = bar.preferredHeight
             y -= h
             host.frame = NSRect(x: 0, y: y, width: containerView.bounds.width, height: h)

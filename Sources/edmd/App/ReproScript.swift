@@ -34,7 +34,8 @@ import WebKit
 ///   resize <w> <h>    set the window's content size to w×h
 ///   logglass          log Liquid Glass chrome geometry (styleMask,
 ///                     titlebarSeparatorStyle, contentLayoutRect,
-///                     additionalTopInset, per-accessory frame/fullScreenMinHeight)
+///                     additionalTopInset, each bar host's hidden/frame, and
+///                     per-accessory frame/fullScreenMinHeight)
 ///   fullscreen        toggle full screen via the window's own action, to check
 ///                     chrome (titlebar accessories, additionalTopInset) survives
 ///                     the transition — the same real path Cmd-Ctrl-F takes,
@@ -370,6 +371,19 @@ enum ReproScript {
                            "contentLayoutRect=\(window.contentLayoutRect) " +
                            "additionalTopInset=\(doc.editor.additionalTopInset) " +
                            "accessoryCount=\(window.titlebarAccessoryViewControllers.count)")
+                    // The bars live in `containerView`, not as accessories
+                    // (see `GlassChrome.wrap`), and each one's *host* is what
+                    // paints — on 26+ an `NSGlassEffectView` that keeps
+                    // frosting its frame even when the bar inside it is
+                    // hidden. Reporting the host's own `isHidden`/frame, not
+                    // just the bar's, is what distinguishes a correctly
+                    // stowed bar from a ghost band parked mid-window.
+                    for (name, bar, host) in [("format", doc.formatBar as NSView?, doc.formatBarHost),
+                                              ("find", doc.findController.barView as NSView,
+                                               doc.findController.barHost)] {
+                        report("repro glass bar[\(name)] barHidden=\(bar?.isHidden ?? true) " +
+                               "hostHidden=\(host?.isHidden ?? true) hostFrame=\(host?.frame ?? .zero)")
+                    }
                     for (i, accessory) in window.titlebarAccessoryViewControllers.enumerated() {
                         let view = accessory.view
                         let screenFrame = view.window.map { $0.convertToScreen(view.convert(view.bounds, to: nil)) }

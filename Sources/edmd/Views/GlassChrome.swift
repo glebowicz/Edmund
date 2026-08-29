@@ -10,6 +10,18 @@ import AppKit
 @MainActor
 enum GlassChrome {
 
+    /// `-debug.forceLegacyChrome YES` makes every `#available(macOS 26.0, *)`
+    /// gate in this migration take its pre-26 branch even when actually
+    /// running on 26+ — the only way to exercise and capture the legacy
+    /// chrome on a machine whose SDK/OS are both 26. Always checked alongside
+    /// `#available`, never instead of it: Swift's availability checking is
+    /// syntactic, so a call site still needs the real `#available` wrapping
+    /// it to use a 26-only API — this flag only decides which side of that
+    /// check callers take.
+    static var forceLegacyChrome: Bool {
+        UserDefaults.standard.bool(forKey: "debug.forceLegacyChrome")
+    }
+
     /// Wraps `bar` as a bottom titlebar accessory so it becomes part of the
     /// same continuous glass surface as the toolbar — "always avoid glass on
     /// glass" (WWDC25 "Meet Liquid Glass") rules out a second material layer

@@ -38,7 +38,7 @@ final class FindController: NSObject, EditorFindHandling {
 
         bar.isHidden = true
         bar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
             // Hosted as a titlebar accessory instead — see
             // `Document.makeWindowControllers`/`GlassChrome`. AppKit stretches
             // a bottom accessory's view to the window's width itself, so none

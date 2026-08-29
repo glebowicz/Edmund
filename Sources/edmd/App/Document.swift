@@ -144,7 +144,7 @@ class Document: NSDocument, HeadingNavigable {
         // `additionalTopInset` from `window.contentLayoutRect` to make room).
         // Pre-26 keeps the opaque titlebar exactly as before — this is an
         // SDK-gated addition, not a replacement, of the existing behaviour.
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
             window.styleMask.insert(.fullSizeContentView)
             window.titlebarAppearsTransparent = true
         } else {
@@ -233,7 +233,7 @@ class Document: NSDocument, HeadingNavigable {
         // On 26+ the hairline would draw a hard line across the glass surface
         // the titlebar/toolbar/bars now share — the "avoid glass on glass"
         // rule extends to a drawn separator between two glass regions too.
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
             window.titlebarSeparatorStyle = .none
         } else {
             window.titlebarSeparatorStyle = .line
@@ -294,7 +294,7 @@ class Document: NSDocument, HeadingNavigable {
         formatBar = FormatBarView(frame: .zero)
         formatBar.isHidden = true
         formatBar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
             // Hosted as a titlebar accessory below instead — one continuous
             // glass surface with the toolbar, not a second material layer
             // stacked inside `containerView`.
@@ -307,7 +307,7 @@ class Document: NSDocument, HeadingNavigable {
         // On 26+, both bars ride the titlebar as glass accessories — format
         // bar first so it lands above the find bar, matching the on-screen
         // order the pre-26 `containerView` stacking produces.
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
             let formatAccessory = GlassChrome.makeAccessory(for: formatBar)
             let findAccessory = GlassChrome.makeAccessory(for: findController.barView)
             window.addTitlebarAccessoryViewController(formatAccessory)

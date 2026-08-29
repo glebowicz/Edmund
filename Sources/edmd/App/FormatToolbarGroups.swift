@@ -35,6 +35,12 @@ import EdmundCore
 struct FormatGroup {
     let id: NSToolbarItem.Identifier
     let label: String
+    /// The glyph for the group as a whole. `controlRepresentation` is
+    /// `.automatic`, so a group AppKit cannot fit collapses in place into a
+    /// single pull-down — and without this it collapses into an *empty* pill
+    /// with a lone chevron, which is what the six-segment style group did at a
+    /// 1000pt window width (captured live). This is what that pill shows.
+    let symbol: String
     let segments: [(symbol: String, title: String, action: Selector)]
 }
 
@@ -52,7 +58,7 @@ extension FormatToolbar {
 
     /// Left to right, the order the format bar draws them in.
     static let formatGroups: [FormatGroup] = [
-        FormatGroup(id: inlineGroup, label: "Style", segments: [
+        FormatGroup(id: inlineGroup, label: "Style", symbol: "bold", segments: [
             ("bold", "Bold", #selector(EditorTextView.formatBold(_:))),
             ("italic", "Italic", #selector(EditorTextView.formatItalic(_:))),
             ("underline", "Underline", #selector(EditorTextView.formatUnderline(_:))),
@@ -60,15 +66,15 @@ extension FormatToolbar {
             ("textformat.subscript", "Subscript", #selector(EditorTextView.formatSubscript(_:))),
             ("textformat.superscript", "Superscript", #selector(EditorTextView.formatSuperscript(_:))),
         ]),
-        FormatGroup(id: markGroup, label: "Highlight", segments: [
+        FormatGroup(id: markGroup, label: "Highlight", symbol: "highlighter", segments: [
             ("highlighter", "Highlight", #selector(EditorTextView.formatHighlight(_:))),
         ]),
-        FormatGroup(id: listGroup, label: "List", segments: [
+        FormatGroup(id: listGroup, label: "List", symbol: "list.bullet", segments: [
             ("list.bullet", "Bulleted List", #selector(EditorTextView.formatBulletedList(_:))),
             ("list.number", "Numbered List", #selector(EditorTextView.formatNumberedList(_:))),
             ("checklist", "Checklist", #selector(EditorTextView.formatChecklist(_:))),
         ]),
-        FormatGroup(id: blockGroup, label: "Block", segments: [
+        FormatGroup(id: blockGroup, label: "Block", symbol: "quote.closing", segments: [
             ("minus", "Thematic Break", #selector(EditorTextView.formatThematicBreak(_:))),
             ("quote.closing", "Block Quote", #selector(EditorTextView.formatBlockQuote(_:))),
         ]),
@@ -124,6 +130,7 @@ extension FormatToolbar {
             target: self,
             action: #selector(formatSegmentClicked(_:)))
         item.label = group.label
+        item.image = Self.symbol(group.symbol)
         segmentActions[group.id] = group.segments.map(\.action)
         segmentPushed[group.id] = Array(repeating: false, count: group.segments.count)
         // Per-segment names for VoiceOver and the customization panel; the

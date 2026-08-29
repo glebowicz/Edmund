@@ -741,9 +741,9 @@ Notable subsystems:
   it near-legible. macOS 26's own apps (Mail, Notes, Pages, Photos, Calendar)
   never do that: controls sit in floating rounded glass capsules grouped by
   function, with the document visible between them and **no separators inside
-  a group**. Edmund follows that — five capsules for the format bar's five
-  control groups, one inset rounded panel for the find bar. Three consequences
-  that are not obvious:
+  a group**. Edmund follows that — one inset rounded panel for the find bar,
+  and (see below) toolbar item groups for the format controls. Three
+  consequences that are not obvious:
   - **`NSGlassEffectView` sizes its `contentView` to its own bounds** and
     ignores constraints pinning that content inside the glass. Padding has to
     come from a wrapper view the glass does not manage (`GlassChrome.padded`);
@@ -756,6 +756,35 @@ Notable subsystems:
     hiding a bar only empties the wrapper's `contentView`, so a closed find bar
     left a band of glass frosting the middle of the document. `barHost === bar`
     on every OS version now.
+- **The capsule row belongs in the toolbar row, not below it** (26+;
+  `FormatToolbarGroups.swift`). Building the format bar's own capsule row was
+  the second wrong shape: in Mail, Notes, Pages, Photos and Calendar the
+  capsule row *is* the toolbar row — the one with the traffic lights and the
+  title — and none of them adds a floating capsule row beneath it. A second row
+  put glass directly over body text (the document showed through the gaps
+  *between* capsules, so icons and paragraph both read badly) and cost 44pt on
+  top of the toolbar's 52. The HIG names the rule: "Using too many Liquid Glass
+  elements in a view can create visual clutter and reduce the impact of the
+  material." On 26+ the bar's five groups are toolbar items instead, and
+  `FormatBarView` never unhides, so it reserves no inset. Pre-26 the Aqua strip
+  is unchanged. Four things that bit:
+  - **`+groupWithItemIdentifier:images:…` is an Objective-C class factory** and
+    returns a plain `NSToolbarItemGroup` however it is called, so an
+    `NSToolbarItemGroup` *subclass* gets none of its stored properties and no
+    `validate()`. Per-segment state lives on `FormatToolbar` keyed by item
+    identifier; validation goes through `NSToolbarItemValidation` on the target.
+  - **That constructor is also the only one `selectionMode` works with**
+    ("system defined control representation"), and it takes a flat list of
+    images — so a pull-down cannot ride inside a group. Heading and
+    Alert/Callout are their own `NSMenuToolbarItem`s.
+  - **`selectedIndex` cannot identify the clicked segment** in a `.selectAny`
+    group: it is "the most recently *selected* item, or -1", so the click that
+    turns Bold **off** reports -1 or some other lit segment. The clicked segment
+    is a diff against the selection last pushed in.
+  - **A group with `.automatic` control representation collapses in place** when
+    it will not fit (a 1000pt window collapses the six-segment style group), and
+    collapses into an *empty* pill unless the group itself carries an `image`.
+    Narrower still, the whole row folds into the toolbar's standard `≫`.
 - **`titlebarAppearsTransparent` stays `false` even on 26+.** `true` does not
   just let content scroll under (`.fullSizeContentView` alone does that) — it
   removes the titlebar's own material, and body text ran through it fully

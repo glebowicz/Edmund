@@ -24,9 +24,15 @@ final class FindController: NSObject, EditorFindHandling {
     /// The bar view, exposed for `Document.layoutTopBars()`.
     var barView: FindBarView { bar }
 
-    /// The view actually stacked in `container` — the `NSGlassEffectView`
-    /// wrapping `bar` on 26+ (see `GlassChrome.wrap`), or `bar` itself
-    /// pre-26. `Document.layoutTopBars()` positions/sizes this, not `bar`.
+    /// The view actually stacked in `container`, which `Document.layoutTopBars()`
+    /// positions and sizes. `bar` itself on every OS version: on 26+ the glass
+    /// lives *inside* the bar as capsules (`GlassChrome`), not as a wrapper
+    /// around it. It briefly was a wrapper, and that cost a bug — a hidden bar
+    /// left its wrapper painting an empty glass band across the document,
+    /// because hiding the bar only emptied the wrapper's `contentView`.
+    /// Kept as a named property rather than folded away: `layoutTopBars` and
+    /// the window-minimum-size test both want a name for "the view in the
+    /// container", and it is the seam a future re-wrap would go back through.
     private(set) var barHost: NSView!
 
     /// The scroll view's top content inset before we pushed content down for the
@@ -52,21 +58,11 @@ final class FindController: NSObject, EditorFindHandling {
         // leaving `window.minSize` moot. Sized here, the bar tracks the container
         // and the window's own minSize governs again. `layoutBar` positions it
         // (and sets the content inset) on every show.
-        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
-            let host = GlassChrome.wrap(bar)
-            host.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
-            bar.autoresizingMask = [.width, .height]
-            host.setFrameSize(NSSize(width: container.bounds.width, height: bar.preferredHeight))
-            bar.frame = NSRect(origin: .zero, size: host.frame.size)
-            // Below the floating status bar so counts stay on top.
-            container.addSubview(host, positioned: .below, relativeTo: statusBar)
-            barHost = host
-        } else {
-            bar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
-            bar.setFrameSize(NSSize(width: container.bounds.width, height: bar.preferredHeight))
-            container.addSubview(bar, positioned: .below, relativeTo: statusBar)
-            barHost = bar
-        }
+        bar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
+        bar.setFrameSize(NSSize(width: container.bounds.width, height: bar.preferredHeight))
+        // Below the floating status bar so counts stay on top.
+        container.addSubview(bar, positioned: .below, relativeTo: statusBar)
+        barHost = bar
 
         bar.onSearchChanged = { [weak self] in self?.runSearch(resetToFirst: true) }
         bar.onOptionsChanged = { [weak self] in self?.runSearch(resetToFirst: true) }

@@ -435,13 +435,38 @@ final class FindBarView: ChromeBarView, NSSearchFieldDelegate {
         grid.row(at: 1).yPlacement = .center
 
         grid.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(grid)
-        NSLayoutConstraint.activate([
-            grid.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            grid.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            grid.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            grid.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-        ])
+
+        if #available(macOS 26.0, *), Self.isGlass {
+            // 26+: one floating glass panel inset from the window's edges,
+            // the shape Mail's find bar takes — a rounded rectangle rather
+            // than a strip welded to the full width. The grid's own 12/6
+            // padding becomes the panel's internal padding, so the controls
+            // sit the same distance from the glass edge as they used to from
+            // the bar edge.
+            let panel = GlassChrome.capsule(
+                GlassChrome.padded(grid, by: NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)),
+                cornerRadius: GlassChrome.panelCornerRadius)
+            panel.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(panel)
+            NSLayoutConstraint.activate([
+                panel.leadingAnchor.constraint(equalTo: leadingAnchor,
+                                               constant: GlassChrome.panelSideInset),
+                panel.trailingAnchor.constraint(equalTo: trailingAnchor,
+                                                constant: -GlassChrome.panelSideInset),
+                panel.topAnchor.constraint(equalTo: topAnchor,
+                                           constant: GlassChrome.barMargin),
+                panel.bottomAnchor.constraint(equalTo: bottomAnchor,
+                                              constant: -GlassChrome.barMargin),
+            ])
+        } else {
+            addSubview(grid)
+            NSLayoutConstraint.activate([
+                grid.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+                grid.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+                grid.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+                grid.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            ])
+        }
 
         searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         replaceField.setContentHuggingPriority(.defaultLow, for: .horizontal)

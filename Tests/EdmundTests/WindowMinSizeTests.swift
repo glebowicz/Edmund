@@ -50,24 +50,57 @@ struct WindowMinSizeTests {
                                             container: container, statusBar: statusBar)
 
         // The bar's *host* is what actually lands in `container` and must
-        // span its width — the bar itself pre-26, or the `NSGlassEffectView`
-        // wrapping it on 26+ (see `GlassChrome.wrap`). A titlebar-accessory
-        // hosting model was tried and abandoned here: measured live, an
-        // accessory's view gets reparented into full screen's separate
-        // toolbar window and retracts off-screen with it whenever the system
-        // auto-hides the toolbar, so the bar is a plain `container` child on
-        // every OS version now, exactly like this test always required.
+        // span its width. Two hosting models were tried and abandoned here.
+        // A titlebar accessory: measured live, an accessory's view gets
+        // reparented into full screen's separate toolbar window and retracts
+        // off-screen with it whenever the system auto-hides the toolbar. And
+        // an `NSGlassEffectView` wrapping the bar on 26+: hiding the bar only
+        // emptied the wrapper's `contentView`, so a closed find bar left a
+        // band of glass frosting the middle of the document. The bar is a
+        // plain `container` child on every OS version now — exactly what this
+        // test always required — and on 26+ the glass lives *inside* it.
         let barHost = findController.barHost
         #expect(barHost?.superview === container)
         #expect(barHost?.frame.width == width)
-        if #available(macOS 26.0, *) {
-            // `bar`'s immediate superview is `NSGlassEffectView`'s own private
-            // content-holder subview, not `barHost` directly — `isDescendant`
-            // holds regardless of that internal wrapper.
-            #expect(barHost !== (findController.barView as NSView))
-            #expect(barHost.map { findController.barView.isDescendant(of: $0) } == true)
-        } else {
-            #expect(barHost === (findController.barView as NSView))
+        #expect(barHost === (findController.barView as NSView))
+    }
+
+    /// On 26+ the find bar's controls ride in one floating glass panel inset
+    /// from the window's side edges (Mail's shape), not a full-bleed strip.
+    /// Pre-26 — and under `-debug.forceLegacyChrome` — there is no glass at
+    /// all: that branch has to keep rendering byte-identical Aqua, and a
+    /// stray `NSGlassEffectView` in the tree is the first way that breaks.
+    @Test("The find bar's glass is one inset panel, and only on 26+")
+    func findBarGlassIsAnInsetPanel() throws {
+        guard #available(macOS 26.0, *) else { return }
+        let width: CGFloat = 800, height: CGFloat = 560
+
+        let editor = EditorTextView.makeTextKit2(
+            frame: NSRect(x: 0, y: 0, width: width, height: height),
+            containerSize: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        )
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        let scrollView = NSScrollView(frame: container.bounds)
+        scrollView.documentView = editor
+        let statusBar = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 22))
+        container.addSubview(scrollView)
+        container.addSubview(statusBar)
+
+        let findController = FindController(editor: editor, scrollView: scrollView,
+                                            container: container, statusBar: statusBar)
+        let bar = findController.barView
+        bar.layoutSubtreeIfNeeded()
+
+        let panels = GlassChrome.capsules(in: bar)
+        guard ChromeBarView.isGlass else {
+            #expect(panels.isEmpty, "legacy chrome must carry no glass")
+            return
         }
+        #expect(panels.count == 1)
+        let panel = try #require(panels.first)
+        let frame = panel.convert(panel.bounds, to: bar)
+        #expect(frame.minX == GlassChrome.panelSideInset)
+        #expect(bar.bounds.width - frame.maxX == GlassChrome.panelSideInset)
+        #expect(panel.cornerRadius == GlassChrome.panelCornerRadius)
     }
 }

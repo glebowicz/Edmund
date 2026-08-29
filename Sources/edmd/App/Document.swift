@@ -35,13 +35,12 @@ class Document: NSDocument, HeadingNavigable {
     /// Internal, not private: `-debug.reproScript`'s `logglass` command
     /// (ReproScript.swift) reports it alongside `formatBarHost`.
     private(set) var formatBar: FormatBarView!
-    /// The view actually stacked in `containerView` for the format bar: on
-    /// 26+ this is the `NSGlassEffectView` wrapping `formatBar` (see
-    /// `GlassChrome.wrap`), so it should be `layoutTopBars` and hit-testing's
-    /// only reference to size/position — `formatBar` itself just fills it.
-    /// Pre-26 there is no wrapper, and this is `formatBar` itself.
-    /// `private(set)`, matching `FindController.barHost`, so the ghost-band
-    /// regression test can read its visibility.
+    /// The view actually stacked in `containerView` for the format bar —
+    /// `formatBar` itself on every OS version, since on 26+ the glass lives
+    /// *inside* the bar as capsules rather than wrapping it (see
+    /// `GlassChrome`, and `FindController.barHost` for the bug the wrapper
+    /// cost). `private(set)`, matching `FindController.barHost`, so the
+    /// ghost-band regression test can read its visibility.
     private(set) var formatBarHost: NSView!
     private var readView: ReadModeWebView?
 
@@ -306,24 +305,11 @@ class Document: NSDocument, HeadingNavigable {
         // contentMinSize scar documented at FindController.init).
         formatBar = FormatBarView(frame: .zero)
         formatBar.isHidden = true
-        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome {
-            // Glass-wrapped (see `GlassChrome.wrap`): the wrapper is the
-            // `containerView` child pinned to the top edge, and `formatBar`
-            // just fills it.
-            let host = GlassChrome.wrap(formatBar)
-            host.autoresizingMask = [.width, .minYMargin]
-            formatBar.autoresizingMask = [.width, .height]
-            host.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
-            formatBar.frame = NSRect(origin: .zero, size: host.frame.size)
-            containerView.addSubview(host, positioned: .below, relativeTo: statusBar)
-            formatBarHost = host
-        } else {
-            formatBar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
-            formatBar.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
-            // Below the floating status bar so counts stay on top.
-            containerView.addSubview(formatBar, positioned: .below, relativeTo: statusBar)
-            formatBarHost = formatBar
-        }
+        formatBar.autoresizingMask = [.width, .minYMargin]   // pinned to the top edge
+        formatBar.setFrameSize(NSSize(width: containerView.bounds.width, height: formatBar.preferredHeight))
+        // Below the floating status bar so counts stay on top.
+        containerView.addSubview(formatBar, positioned: .below, relativeTo: statusBar)
+        formatBarHost = formatBar
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(editorDidChange(_:)),

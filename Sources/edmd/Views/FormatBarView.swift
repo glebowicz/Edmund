@@ -17,7 +17,18 @@ final class FormatBarView: ChromeBarView {
     /// The bar's fixed height. The accessory-bar buttons sit smaller than the
     /// strip; `preferredHeight` drives the editor's top inset.
     static let barHeight: CGFloat = 28
-    override var preferredHeight: CGFloat { Self.barHeight }
+
+    /// On 26+ the bar is not a strip at all — it is a row of floating glass
+    /// capsules with clearance above and below (see `GlassChrome`), so it
+    /// reserves the capsule's height plus both margins.
+    static var glassBarHeight: CGFloat {
+        GlassChrome.capsuleHeight + 2 * GlassChrome.barMargin
+    }
+
+    override var preferredHeight: CGFloat {
+        if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome { return Self.glassBarHeight }
+        return Self.barHeight
+    }
 
     /// The borderless controls' footprint. Comfortably above the 20pt the HIG
     /// asks for a pointer target even at this size.
@@ -154,29 +165,78 @@ final class FormatBarView: ChromeBarView {
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        for (i, group) in groups.enumerated() {
-            stack.addArrangedSubview(group)
-            if i < groups.count - 1 { stack.setCustomSpacing(14, after: group) }
+        if #available(macOS 26.0, *), Self.isGlass {
+            // 26+: each group rides in its own floating glass capsule, the way
+            // every macOS 26 app groups its toolbar controls. The group stacks
+            // themselves are unchanged — only what wraps them.
+            for (i, group) in groups.enumerated() {
+                let pad = GlassChrome.capsulePadding
+                let capsule = GlassChrome.capsule(
+                    GlassChrome.padded(group, by: NSEdgeInsets(
+                        top: 0, left: pad, bottom: 0, right: pad)),
+                    cornerRadius: GlassChrome.capsuleHeight / 2)
+                stack.addArrangedSubview(capsule)
+                capsule.heightAnchor.constraint(
+                    equalToConstant: GlassChrome.capsuleHeight).isActive = true
+                if i < groups.count - 1 {
+                    stack.setCustomSpacing(GlassChrome.capsuleGap, after: capsule)
+                }
+            }
+        } else {
+            for (i, group) in groups.enumerated() {
+                stack.addArrangedSubview(group)
+                if i < groups.count - 1 { stack.setCustomSpacing(14, after: group) }
+            }
         }
         stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+
+        // The capsules go inside a container view so AppKit renders them in a
+        // single pass and fuses any two that come within its `spacing` —
+        // Liquid Glass's own merge behaviour, which is lost if the glass views
+        // are merely siblings.
+        let hosted: NSView
+        if #available(macOS 26.0, *), Self.isGlass {
+            hosted = GlassChrome.container(stack)
+        } else {
+            hosted = stack
+        }
+        hosted.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hosted)
         // Centred, so a narrow window clips the same reachable band on both
         // sides rather than shoving the leading controls off-screen.
         NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            hosted.centerXAnchor.constraint(equalTo: centerXAnchor),
+            hosted.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        if hosted !== stack {
+            // `NSGlassEffectContainerView` has no intrinsic size of its own —
+            // it takes whatever frame it is given and only *renders* its
+            // content view. Without this it lays out at zero and the capsules
+            // never appear.
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: hosted.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: hosted.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: hosted.topAnchor),
+                stack.bottomAnchor.constraint(equalTo: hosted.bottomAnchor),
+            ])
+        }
     }
 
-    /// One control group: the buttons run together with a hairline between each
-    /// adjacent pair, so the group reads as a single segmented unit. Group
-    /// boundaries get no divider — the wider spacing on the top-level stack is
-    /// what separates those, which is how Mail's bar is drawn.
+    /// One control group. Pre-26 the buttons run together with a hairline
+    /// between each adjacent pair, so the group reads as a single segmented
+    /// unit, and the wider spacing on the top-level stack separates one group
+    /// from the next — how Mail's bar was drawn before 26. On 26+ the group's
+    /// own glass capsule is the boundary and the hairlines go away.
     private func makeGroup(_ views: [NSView]) -> NSStackView {
         var arranged: [NSView] = []
         var dividers: [NSView] = []
         for (i, view) in views.enumerated() {
-            if i > 0 {
+            // The capsule is the grouping on 26+. Apple's own grouped toolbar
+            // controls (Mail's reply trio, Photos' zoom pair, Pages' insert
+            // row) carry no internal separators — the glass boundary already
+            // says where the group starts and ends, and a hairline drawn
+            // across it is the "glass on glass" mistake in miniature.
+            if i > 0, !Self.isGlass {
                 let divider = Self.makeDivider()
                 dividers.append(divider)
                 arranged.append(divider)

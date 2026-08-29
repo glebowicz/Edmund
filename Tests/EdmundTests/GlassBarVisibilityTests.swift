@@ -42,4 +42,62 @@ struct GlassBarVisibilityTests {
         #expect(formatHost.isHidden)
         #expect(findHost.isHidden)
     }
+
+    /// The format bar's five control groups each get their own capsule on
+    /// 26+ — the grouping *is* the glass, so a change that collapses them
+    /// into one pill (which a too-large container `spacing` did once, live)
+    /// or drops a group has to fail here.
+    @Test("The format bar is five separate capsules on 26+, none pre-26")
+    func formatBarIsFiveCapsules() throws {
+        guard #available(macOS 26.0, *) else { return }
+        let bar = FormatBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 44))
+        bar.layoutSubtreeIfNeeded()
+        let capsules = GlassChrome.capsules(in: bar)
+
+        guard ChromeBarView.isGlass else {
+            #expect(capsules.isEmpty, "legacy chrome must carry no glass")
+            return
+        }
+        #expect(capsules.count == 5)
+        for capsule in capsules {
+            // Fully rounded: a capsule, not a rounded rectangle.
+            #expect(capsule.cornerRadius == GlassChrome.capsuleHeight / 2)
+            #expect(capsule.frame.height == GlassChrome.capsuleHeight)
+        }
+        // Laid out in one row with a real gap, not overlapping or fused.
+        let frames = capsules.map { $0.convert($0.bounds, to: bar) }
+            .sorted { $0.minX < $1.minX }
+        for (left, right) in zip(frames, frames.dropFirst()) {
+            #expect(right.minX - left.maxX == GlassChrome.capsuleGap)
+        }
+    }
+
+    /// A floating capsule row spans the window but only *owns* the capsules.
+    /// Without the `hitTest` override the bar is a full-width invisible dead
+    /// strip: the pointer stops being an I-beam and a click that visibly
+    /// lands on a paragraph moves no caret. Pre-26 the bar is an opaque strip
+    /// that legitimately owns every point in it, so it must still swallow.
+    @Test("Clicks beside the capsules fall through to the document")
+    func emptyBarAreaIsClickThrough() throws {
+        guard #available(macOS 26.0, *) else { return }
+        let width: CGFloat = 800
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 400))
+        let bar = FormatBarView(frame: NSRect(x: 0, y: 0, width: width,
+                                              height: FormatBarView.glassBarHeight))
+        container.addSubview(bar)
+        bar.layoutSubtreeIfNeeded()
+
+        let midY = bar.frame.midY
+        // Far left of a centred row: document, on 26+.
+        let outside = NSPoint(x: 8, y: midY)
+        // Dead centre lands in the middle capsule.
+        let inside = NSPoint(x: bar.frame.midX, y: midY)
+
+        guard ChromeBarView.isGlass else {
+            #expect(bar.hitTest(outside) != nil, "the legacy strip owns its whole width")
+            return
+        }
+        #expect(bar.hitTest(outside) == nil)
+        #expect(bar.hitTest(inside) != nil)
+    }
 }

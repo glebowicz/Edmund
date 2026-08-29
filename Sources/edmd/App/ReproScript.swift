@@ -383,6 +383,16 @@ enum ReproScript {
                                                doc.findController.barHost)] {
                         report("repro glass bar[\(name)] barHidden=\(bar?.isHidden ?? true) " +
                                "hostHidden=\(host?.isHidden ?? true) hostFrame=\(host?.frame ?? .zero)")
+                        // Each capsule's frame in the bar's own coordinates —
+                        // the only way to check padding, gaps and the inset of
+                        // a floating panel without measuring a screenshot.
+                        if #available(macOS 26.0, *), let bar {
+                            for (j, glass) in GlassChrome.capsules(in: bar).enumerated() {
+                                report("repro glass bar[\(name)] capsule[\(j)] " +
+                                       "frame=\(glass.convert(glass.bounds, to: bar)) " +
+                                       "radius=\(glass.cornerRadius)")
+                            }
+                        }
                     }
                     for (i, accessory) in window.titlebarAccessoryViewControllers.enumerated() {
                         let view = accessory.view

@@ -42,9 +42,11 @@ class ChromeBarView: NSVisualEffectView {
         return fittingSize.height
     }
 
-    /// Whether this bar is hosted as a titlebar accessory and should draw
-    /// none of its own chrome (see `init`).
-    private static var isGlass: Bool {
+    /// Whether this bar draws none of its own chrome and puts its controls in
+    /// floating glass capsules instead (see `init` and `GlassChrome`).
+    /// Internal, not private: both subclasses build a different control layout
+    /// on each side of it.
+    static var isGlass: Bool {
         if #available(macOS 26.0, *), !GlassChrome.forceLegacyChrome { return true }
         return false
     }
@@ -68,12 +70,14 @@ class ChromeBarView: NSVisualEffectView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         if Self.isGlass {
-            // Hosted as a titlebar accessory now — one continuous glass
-            // surface with the toolbar. Masking out this view's own material
-            // lets the titlebar's real glass show through instead of a
-            // second material layer stacked under it — "always avoid glass
-            // on glass" (WWDC25 "Meet Liquid Glass"). No hairline either: a
-            // drawn separator between two glass regions is the same mistake.
+            // The bar is a frame for floating glass, not a surface: its
+            // controls ride in `NSGlassEffectView` capsules (see
+            // `GlassChrome`) and the document shows through everywhere else.
+            // Masking out this view's own material is what makes that "everywhere
+            // else" actually transparent — a second material layer under the
+            // capsules would be glass on glass (WWDC25 "Meet Liquid Glass"),
+            // and it is also what turned a full-width strip into the smear the
+            // capsules replaced. No hairline either, for the same reason.
             maskImage = Self.transparentMaskImage
             return
         }
@@ -100,6 +104,19 @@ class ChromeBarView: NSVisualEffectView {
         ])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// Clicks landing in the bar's transparent area belong to the document
+    /// underneath, not to the bar. Without this the floating capsule row is a
+    /// full-width invisible dead strip: the pointer stops being an I-beam and
+    /// a click that visibly lands on a paragraph moves no caret.
+    ///
+    /// Pre-26 the bar is an opaque strip that legitimately owns every point in
+    /// it, so this defers to `super` there.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard #available(macOS 26.0, *), Self.isGlass else { return super.hitTest(point) }
+        guard GlassChrome.hit(point, inCapsulesOf: self) else { return nil }
+        return super.hitTest(point)
+    }
 
     /// Keeps the hairline's colour correct across a light/dark switch — a
     /// `cgColor` snapshot doesn't follow the appearance on its own. No-op on

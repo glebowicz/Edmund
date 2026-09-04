@@ -59,7 +59,49 @@ public class EditorTextStorage: NSTextStorage {
         pendingEdit = p
     }
 
-    override public var string: String { backing.string }
+    /// The bridged Swift string, held until the next character edit.
+    ///
+    /// `backing.string` is an NSMutableString, which Swift cannot bridge
+    /// lazily: reading it eagerly transcodes the whole document to UTF-8. That
+    /// alone would be bad enough, but the *second* cost is worse — the fresh
+    /// String is UTF-8 native, so every UTF-16 offset AppKit asks it for has to
+    /// build a `_StringBreadcrumbs` index. Breadcrumbs are cached on the String
+    /// storage object, so handing out a new String each call meant the O(n)
+    /// index was rebuilt from scratch every time.
+    ///
+    /// TextKit 2's draw path walks straight into both: every line fragment it
+    /// paints calls `-[NSTextLineFragment textLineFragmentRange]` →
+    /// `-[NSTextParagraph locationForCharacterIndex:]` → `string`. On a 43k-char
+    /// document that was ~76% of a scroll frame. Caching one String per edit
+    /// makes the transcode per-edit instead of per-call and — because the same
+    /// storage object comes back — lets the breadcrumb index actually stick.
+    ///
+    /// Mutated only from character edits, which (like every other storage
+    /// mutation here) happen on the main thread.
+    private var cachedString: String?
+
+    #if DEBUG
+    internal private(set) var debugStringBridgeCount = 0
+    #endif
+
+    override public var string: String {
+        if let cachedString { return cachedString }
+        #if DEBUG
+        debugStringBridgeCount += 1
+        #endif
+        let bridged = backing.string
+        cachedString = bridged
+        return bridged
+    }
+
+    // NSAttributedString's default `length` is `self.string.length`, which on a
+    // Swift subclass routes through the `string` override — and `backing.string`
+    // is an NSMutableString, which Swift cannot bridge lazily, so every call
+    // eagerly transcodes the whole document to UTF-8. AppKit asks for `length`
+    // constantly (viewport layout, attribute enumeration, even mouse-moved
+    // hit-testing), so without this override the editor pays an O(document) copy
+    // per query. Answering from the backing store directly is O(1).
+    override public var length: Int { backing.length }
 
     override public func attributes(
         at location: Int, effectiveRange range: NSRangePointer?
@@ -70,6 +112,7 @@ public class EditorTextStorage: NSTextStorage {
     override public func replaceCharacters(in range: NSRange, with str: String) {
         let delta = (str as NSString).length - range.length
         accumulateEdit(currentRange: range, delta: delta)
+        cachedString = nil
         backing.replaceCharacters(in: range, with: str)
         edited(.editedCharacters, range: range, changeInLength: delta)
     }
@@ -77,6 +120,7 @@ public class EditorTextStorage: NSTextStorage {
     override public func replaceCharacters(in range: NSRange, with attrString: NSAttributedString) {
         let delta = attrString.length - range.length
         accumulateEdit(currentRange: range, delta: delta)
+        cachedString = nil
         backing.replaceCharacters(in: range, with: attrString)
         edited([.editedCharacters, .editedAttributes], range: range,
                changeInLength: delta)

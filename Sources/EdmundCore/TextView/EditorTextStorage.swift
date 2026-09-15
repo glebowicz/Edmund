@@ -59,7 +59,26 @@ public class EditorTextStorage: NSTextStorage {
         pendingEdit = p
     }
 
-    override public var string: String { backing.string }
+    /// Reuse the Swift string to avoid repeated conversions from the backing store.
+    /// Cleared after character edits; accessed only on the main thread.
+    private var cachedString: String?
+
+    #if DEBUG
+    internal private(set) var debugStringBridgeCount = 0
+    #endif
+
+    override public var string: String {
+        if let cachedString { return cachedString }
+        #if DEBUG
+        debugStringBridgeCount += 1
+        #endif
+        let bridged = backing.string
+        cachedString = bridged
+        return bridged
+    }
+
+    // Read the UTF-16 length directly, without going through `string`.
+    override public var length: Int { backing.length }
 
     override public func attributes(
         at location: Int, effectiveRange range: NSRangePointer?
@@ -71,6 +90,7 @@ public class EditorTextStorage: NSTextStorage {
         let delta = (str as NSString).length - range.length
         accumulateEdit(currentRange: range, delta: delta)
         backing.replaceCharacters(in: range, with: str)
+        cachedString = nil
         edited(.editedCharacters, range: range, changeInLength: delta)
     }
 
@@ -78,6 +98,9 @@ public class EditorTextStorage: NSTextStorage {
         let delta = attrString.length - range.length
         accumulateEdit(currentRange: range, delta: delta)
         backing.replaceCharacters(in: range, with: attrString)
+        // Replacing from self can read `string` and populate the cache.
+        // Invalidate after the mutation, before notifying TextKit.
+        cachedString = nil
         edited([.editedCharacters, .editedAttributes], range: range,
                changeInLength: delta)
     }
